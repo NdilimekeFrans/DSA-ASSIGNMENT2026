@@ -1,0 +1,16 @@
+# Ballerina build output
+target/
+generated/
+*.jar
+*.balx
+
+# Dependency lock files are regenerated per distribution version
+Dependencies.toml
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*~
