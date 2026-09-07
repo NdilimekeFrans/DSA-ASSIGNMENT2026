@@ -1,16 +1,11 @@
-# Ballerina build output
+# Ballerina generates this directory during the compilation of a package.
+# It contains compiler-generated artifacts and the final executable if this is an application package.
 target/
+
+# Ballerina maintains the compiler-generated source code here.
+# Remove this if you want to commit generated sources.
 generated/
-*.jar
-*.balx
 
-# Dependency lock files are regenerated per distribution version
-Dependencies.toml
-
-# Editors and operating systems
-.idea/
-.vscode/
-*.iml
-.DS_Store
-Thumbs.db
-*~
+# Contains configuration values used during development time.
+# See https://ballerina.io/learn/provide-values-to-configurable-variables/ for more details.
+Config.toml
