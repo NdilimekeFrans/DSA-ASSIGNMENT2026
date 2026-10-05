@@ -102,9 +102,12 @@ public isolated function allProperties() returns Property[] {
 # Every listing a Host still owns in a given region, used by `remove_property`.
 public isolated function propertiesInRegion(string hostId, string region) returns Property[] {
     lock {
-        Property[] results = from Property property in propertyStore
-            where property.host_id == hostId && equalsIgnoreCase(property.region, region)
-            select property;
+        Property[] results = [];
+        foreach Property property in propertyStore {
+            if property.host_id == hostId && equalsIgnoreCase(property.region, region) {
+                results.push(property);
+            }
+        }
         return results.clone();
     }
 }
@@ -123,9 +126,12 @@ public isolated function saveBooking(Booking booking) {
 
 public isolated function bookingsForProperty(string propertyId) returns Booking[] {
     lock {
-        Booking[] results = from Booking booking in bookingStore
-            where booking.property_id == propertyId && booking.status == BOOKING_CONFIRMED
-            select booking;
+        Booking[] results = [];
+        foreach Booking booking in bookingStore {
+            if booking.property_id == propertyId && booking.status == BOOKING_CONFIRMED {
+                results.push(booking);
+            }
+        }
         return results.clone();
     }
 }
@@ -165,9 +171,12 @@ public isolated function clearCartItems(string guestId, string[] confirmedIds) {
     lock {
         CartItem[] items = cartStore[guestId] ?: [];
         string[] ids = confirmedIds.clone();
-        CartItem[] remaining = from CartItem item in items
-            where ids.indexOf(item.cartItemId) is ()
-            select item;
+        CartItem[] remaining = [];
+        foreach CartItem item in items {
+            if ids.indexOf(item.cartItemId) is () {
+                remaining.push(item);
+            }
+        }
         cartStore[guestId] = remaining.clone();
     }
 }
