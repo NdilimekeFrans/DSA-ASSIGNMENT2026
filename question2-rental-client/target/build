@@ -1,0 +1,61 @@
+{
+  "last_build_time": 1791232342745,
+  "last_update_time": 1791232342745,
+  "last_bal_toml_update_time": 1788382542062,
+  "distribution_version": "2201.13.5",
+  "last_modified_time": {
+    "rental_client": 1791232315083
+  },
+  "last_build_options": {
+    "compilationOptions": {
+      "observabilityIncluded": false,
+      "dumpBir": false,
+      "cloud": "",
+      "dumpGraph": false,
+      "dumpRawGraphs": false
+    }
+  },
+  "src_meta_info": [
+    {
+      "file": "C:\\Users\\howos\\OneDrive\\Desktop\\DSA612S-Assignment1\\question2-rental-client\\Ballerina.toml",
+      "hash": "dd8d2c18bcf81c971c2ddcaa5c22581d91a631dbd9517b84d412d9f6f7f5f34e",
+      "size": 141,
+      "lastModifiedTime": 1788382542062
+    },
+    {
+      "file": "C:\\Users\\howos\\OneDrive\\Desktop\\DSA612S-Assignment1\\question2-rental-client\\main.bal",
+      "hash": "63e8b3825a2ceac94e97da286f79484025db966a67e60e3ea794d3ae85457c62",
+      "size": 17793,
+      "lastModifiedTime": 1788382542057
+    },
+    {
+      "file": "C:\\Users\\howos\\OneDrive\\Desktop\\DSA612S-Assignment1\\question2-rental-client\\rental_pb.bal",
+      "hash": "588da8a88c69993b1cb88d6336df19a9ede8e19e48da676fc4553755b0ff70df",
+      "size": 34623,
+      "lastModifiedTime": 1791232315083
+    }
+  ],
+  "target_exec_meta_info": {
+    "file": "C:\\Users\\howos\\OneDrive\\Desktop\\DSA612S-Assignment1\\question2-rental-client\\target\\backup\\bin\\rental_client.jar",
+    "hash": "ec9a714f014c95d91e600f16857611a25297bc6d2385a3edc648ba16ff510859",
+    "size": 44491153,
+    "lastModifiedTime": 1791232344055
+  },
+  "settings_meta_info": {
+    "file": "C:\\Users\\howos\\.ballerina\\Settings.toml",
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0,
+    "lastModifiedTime": 1785251062181
+  },
+  "ballerina_toml_meta_info": {
+    "file": "C:\\Users\\howos\\OneDrive\\Desktop\\DSA612S-Assignment1\\question2-rental-client\\Ballerina.toml",
+    "hash": "dd8d2c18bcf81c971c2ddcaa5c22581d91a631dbd9517b84d412d9f6f7f5f34e",
+    "size": 141,
+    "lastModifiedTime": 1788382542062
+  },
+  "imports": [
+    "ballerina/io",
+    "ballerina/grpc",
+    "ballerina/protobuf"
+  ]
+}
