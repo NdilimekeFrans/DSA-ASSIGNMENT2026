@@ -189,10 +189,10 @@ function updateAsset() returns error? {
     return;
 }
 
-function addIfPresent(map<string> changes, string field, string value) {
+function addIfPresent(map<string> changes, string fieldName, string value) {
     string trimmed = value.trim();
     if trimmed != "" {
-        changes[field] = field == "status" ? trimmed.toUpperAscii() : trimmed;
+        changes[fieldName] = fieldName == "status" ? trimmed.toUpperAscii() : trimmed;
     }
 }
 
@@ -325,9 +325,9 @@ function manageWorkOrders() returns error? {
             io:println("No work orders on this asset.");
             return;
         }
-        foreach WorkOrder order in orders {
-            io:println("  ", fit(order.orderId, 12), fit(order.status, 14), order.description);
-            foreach Task task in order.tasks {
+        foreach WorkOrder orderEntry in orders {
+            io:println("  ", fit(orderEntry.orderId, 12), fit(orderEntry.status, 14), orderEntry.description);
+            foreach Task task in orderEntry.tasks {
                 io:println("      - ", fit(task.taskId, 10), task.description);
             }
         }
@@ -423,9 +423,9 @@ function printAssetDetail(Asset asset) {
     printSchedules(asset);
     if asset.workOrders.length() > 0 {
         io:println("Work orders  :");
-        foreach WorkOrder order in asset.workOrders {
-            io:println("   - ", fit(order.orderId, 12), fit(order.status, 14), order.description);
-            foreach Task task in order.tasks {
+        foreach WorkOrder orderEntry in asset.workOrders {
+            io:println("   - ", fit(orderEntry.orderId, 12), fit(orderEntry.status, 14), orderEntry.description);
+            foreach Task task in orderEntry.tasks {
                 io:println("        * ", task.description);
             }
         }

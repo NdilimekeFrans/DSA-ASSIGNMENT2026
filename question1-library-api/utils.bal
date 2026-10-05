@@ -50,11 +50,11 @@ public isolated function isPast(string date) returns boolean {
 # therefore *not* a clash.
 public isolated function rangesOverlap(string aStart, string aEnd, string bStart, string bEnd)
         returns boolean|error {
-    int as = check toEpochDay(aStart);
+    int aS = check toEpochDay(aStart);
     int ae = check toEpochDay(aEnd);
     int bs = check toEpochDay(bStart);
     int be = check toEpochDay(bEnd);
-    return as < be && bs < ae;
+    return aS < be && bs < ae;
 }
 
 isolated int sequence = 1000;

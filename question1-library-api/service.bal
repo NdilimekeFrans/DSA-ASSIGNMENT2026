@@ -352,8 +352,8 @@ isolated function toApiError(error e, string 'resource) returns ApiError {
         return notFound;
     }
     if e is ConflictError {
-        http:Conflict conflict = {body: {code: "CONFLICT", message: e.message(), 'resource: 'resource}};
-        return conflict;
+        http:Conflict conflictResponse = {body: {code: "CONFLICT", message: e.message(), 'resource: 'resource}};
+        return conflictResponse;
     }
     if e is ValidationError {
         http:BadRequest badRequestResponse = {
