@@ -52,14 +52,17 @@ and the overdue dashboard only has to skip the `BOOKING` entries.
 
 ### 2.2 The data store
 
-`map<Asset>` keyed on `assetTag` gives O(1) create, look-up, update and delete
-on the business key, and `hasKey` makes uniqueness a one-line check rather than
-a scan.
-
-Institutions use `table<Institution> key(institutionId)` instead. A table
-enforces key uniqueness in the language itself — `add` fails on a duplicate —
-which is exactly what a registry of institutions needs, and it demonstrates the
-second storage abstraction the brief mentions.
+Question 1 persists its data in SQLite (`library.db`, see `db.bal`), opened
+through `ballerinax/java.jdbc` and the xerial `sqlite-jdbc` driver. The
+`assets` table is keyed on `asset_tag` and `institutions` on `institution_id`,
+so the database enforces uniqueness of both business keys. Scalar fields that
+are filtered on (institution, site, status) are real columns, so the global and
+campus views are a single `SELECT ... WHERE`. Nested collections that always
+travel with their asset (components, schedules, work orders, the current loan)
+are stored as JSON text. PATCH is one `UPDATE ... SET col = COALESCE(?, col)`.
+All statements are parameterized queries, so user input never becomes SQL
+text. Readable IDs (`LN-1001`) come from an `id_sequence` table so they stay
+unique across restarts. The database is seeded on the first start only.
 
 Every stored value crosses the `lock` boundary through `clone()`. Without it a
 caller would hold a reference into the store and could mutate it later without
@@ -189,10 +192,11 @@ normal outcome from being logged as a failure.
 
 ## 4. Limitations and future work
 
-Both systems keep state in memory, so a restart loses it — the brief calls for
-maps or tables, but a production deployment would put a replicated store behind
-the same interfaces, which is why all state access is already confined to one
-file per system.
+Question 1 persists to a local SQLite file; Question 2 still keeps its state in
+memory, so a restart of the rental server loses it. SQLite allows a single
+writer, so a multi-instance deployment would swap it for a server database
+behind the same interfaces, which is why all state access is confined to
+`store.bal` / `db.bal`.
 
 Neither service authenticates its callers. Question 1 trusts the `borrower`
 field and Question 2 trusts `host_id`; a real deployment would need tokens and

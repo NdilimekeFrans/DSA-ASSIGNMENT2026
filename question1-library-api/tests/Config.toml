@@ -1,0 +1,5 @@
+# Configuration used only by `bal test`: the tests get their own database file,
+# wiped at start-up, so they never touch the real library.db.
+[dsa612s.library_api]
+dbFile = "target/library-test.db"
+resetDatabase = true

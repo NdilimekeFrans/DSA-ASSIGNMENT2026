@@ -1,15 +1,18 @@
 // ---------------------------------------------------------------------------
-// In-memory data store.
+// Data store backed by SQLite (see db.bal for the connection and schema).
 //
-// Assets live in a `map<Asset>` keyed on the unique `assetTag`, giving O(1)
-// lookup, insert and delete on the natural business key. Institutions live in a
-// `table<Institution> key(institutionId)` which enforces key uniqueness at the
-// language level.
+// Assets are keyed on their unique `assetTag` (the PRIMARY KEY of the `assets`
+// table) and institutions on `institutionId`. Every function below loads the
+// rows it needs, applies the business rules in Ballerina, and writes the result
+// back with a parameterized SQL statement.
 //
-// Both variables are declared `isolated` and every access happens inside a
-// `lock` block, so the store is safe under the concurrent requests the HTTP
-// listener serves. Values crossing the lock boundary are cloned, which keeps
-// callers from mutating stored state by holding on to a reference.
+// Concurrency: the HTTP listener serves requests concurrently, so every
+// read-modify-write sequence runs inside a `lock` block that touches the
+// isolated `storeRevision` counter. Ballerina guarantees that lock blocks
+// sharing an isolated variable never run at the same time, so the
+// load -> change -> save steps of one request are atomic: two updates of the
+// same asset can never interleave and lose each other's changes. Values that
+// leave a lock are cloned, as the isolation rules require.
 // ---------------------------------------------------------------------------
 
 # Raised when the requested entity does not exist.
@@ -21,142 +24,105 @@ public type ConflictError distinct error;
 # Raised when the payload is syntactically valid but semantically wrong.
 public type ValidationError distinct error;
 
-isolated map<Asset> assetStore = {};
-
-isolated table<Institution> key(institutionId) institutionStore = table [];
+# Number of write operations since start-up. Every writer increments it inside
+# its `lock` block; sharing this one isolated variable is what makes those
+# blocks mutually exclusive.
+isolated int storeRevision = 0;
 
 // ------------------------------ institutions -------------------------------
 
-public isolated function listInstitutions() returns Institution[] {
-    lock {
-        return institutionStore.toArray().clone();
-    }
+public isolated function listInstitutions() returns Institution[]|StoreError {
+    return queryInstitutions(``);
 }
 
-public isolated function getInstitution(string institutionId) returns Institution|NotFoundError {
-    lock {
-        Institution? found = institutionStore[institutionId];
-        if found is () {
-            return error NotFoundError("No institution registered with id '" + institutionId + "'");
-        }
-        return found.clone();
-    }
+public isolated function getInstitution(string institutionId) returns Institution|NotFoundError|StoreError {
+    return loadInstitution(institutionId);
 }
 
-public isolated function addInstitution(Institution institution) returns Institution|ConflictError|ValidationError {
+public isolated function addInstitution(Institution institution)
+        returns Institution|ConflictError|ValidationError|StoreError {
     if institution.institutionId.trim() == "" || institution.name.trim() == "" {
         return error ValidationError("'institutionId' and 'name' are required");
     }
+    string institutionId = institution.institutionId;
+    string name = institution.name;
     lock {
-        if institutionStore.hasKey(institution.institutionId) {
-            return error ConflictError("Institution '" + institution.institutionId + "' is already registered");
+        storeRevision += 1;
+        boolean exists = check institutionExists(institutionId, name);
+        if exists {
+            return error ConflictError("Institution '" + institutionId + "' is already registered");
         }
-        institutionStore.add(institution.clone());
+        check saveInstitution(institution.clone());
         return institution.clone();
     }
 }
 
-public isolated function removeInstitution(string institutionId) returns Institution|NotFoundError|ConflictError {
-    Institution institution = check getInstitution(institutionId);
+public isolated function removeInstitution(string institutionId)
+        returns Institution|NotFoundError|ConflictError|StoreError {
     lock {
-        foreach Asset asset in assetStore {
-            if asset.institution == institution.name {
-                return error ConflictError("Institution '" + institution.name
-                        + "' still has assets registered against it; remove or reassign them first");
-            }
+        storeRevision += 1;
+        Institution institution = check loadInstitution(institutionId);
+        int owned = check countAssetsOwnedBy(institution.name);
+        if owned > 0 {
+            return error ConflictError("Institution '" + institution.name
+                    + "' still has assets registered against it; remove or reassign them first");
         }
-    }
-    lock {
-        Institution removed = institutionStore.remove(institutionId);
-        return removed.clone();
+        check deleteInstitutionRow(institutionId);
+        return institution.clone();
     }
 }
 
 # Adds a site/campus to an existing institution.
-public isolated function addSite(string institutionId, string site) returns Institution|NotFoundError|ConflictError {
+public isolated function addSite(string institutionId, string site)
+        returns Institution|NotFoundError|ConflictError|StoreError {
     lock {
-        Institution? found = institutionStore[institutionId];
-        if found is () {
-            return error NotFoundError("No institution registered with id '" + institutionId + "'");
-        }
+        storeRevision += 1;
+        Institution found = check loadInstitution(institutionId);
         if found.sites.indexOf(site) != () {
             return error ConflictError("Site '" + site + "' is already listed for this institution");
         }
         found.sites.push(site);
+        check saveInstitution(found);
         return found.clone();
-    }
-}
-
-isolated function institutionIsRegistered(string name) returns boolean {
-    lock {
-        foreach Institution institution in institutionStore {
-            if institution.name == name {
-                return true;
-            }
-        }
-        return false;
     }
 }
 
 // --------------------------------- assets ----------------------------------
 
-public isolated function listAssets() returns Asset[] {
-    lock {
-        return assetStore.toArray().clone();
-    }
+public isolated function listAssets() returns Asset[]|StoreError {
+    return queryAssets(``);
 }
 
-public isolated function getAsset(string assetTag) returns Asset|NotFoundError {
-    lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
-        return found.clone();
-    }
+public isolated function getAsset(string assetTag) returns Asset|NotFoundError|StoreError {
+    return loadAsset(assetTag);
 }
 
 # Filters the catalogue. Any argument left as `()` is ignored, so the same
-# function backs the global view, the campus view and the status view.
+# function backs the global view, the campus view and the status view. The
+# filtering happens in SQL; `lower()` makes the text comparisons
+# case-insensitive.
 public isolated function filterAssets(string? institution, string? site, AssetStatus? status)
-        returns Asset[] {
-    lock {
-        Asset[] results = [];
-        foreach Asset asset in assetStore {
-            if institution is string && !equalsIgnoreCase(asset.institution, institution) {
-                continue;
-            }
-            if site is string && !equalsIgnoreCase(asset.site, site) {
-                continue;
-            }
-            if status is AssetStatus && asset.status != status {
-                continue;
-            }
-            results.push(asset);
-        }
-        return results.clone();
-    }
+        returns Asset[]|StoreError {
+    return queryAssets(`WHERE (${institution} IS NULL OR lower(institution) = lower(${institution}))
+                          AND (${site} IS NULL OR lower(site) = lower(${site}))
+                          AND (${status} IS NULL OR status = ${status})`);
 }
 
-isolated function equalsIgnoreCase(string a, string b) returns boolean {
-    return a.toLowerAscii() == b.toLowerAscii();
-}
-
-public isolated function addAsset(Asset asset) returns Asset|ConflictError|ValidationError {
-    ValidationError? invalid = validateAsset(asset);
-    if invalid is ValidationError {
-        return invalid;
-    }
+public isolated function addAsset(Asset asset) returns Asset|ConflictError|ValidationError|StoreError {
+    check validateAsset(asset);
+    string assetTag = asset.assetTag;
     lock {
-        if assetStore.hasKey(asset.assetTag) {
-            return error ConflictError("An asset with tag '" + asset.assetTag + "' already exists");
+        storeRevision += 1;
+        boolean exists = check assetExists(assetTag);
+        if exists {
+            return error ConflictError("An asset with tag '" + assetTag + "' already exists");
         }
-        assetStore[asset.assetTag] = asset.clone();
+        check saveAsset(asset.clone());
         return asset.clone();
     }
 }
 
-isolated function validateAsset(Asset asset) returns ValidationError? {
+isolated function validateAsset(Asset asset) returns ValidationError|StoreError? {
     if asset.assetTag.trim() == "" {
         return error ValidationError("'assetTag' must not be empty");
     }
@@ -166,7 +132,8 @@ isolated function validateAsset(Asset asset) returns ValidationError? {
     if !isValidDate(asset.dateAcquired) {
         return error ValidationError("'dateAcquired' must be a calendar date in YYYY-MM-DD form");
     }
-    if !institutionIsRegistered(asset.institution) {
+    boolean registered = check institutionIsRegistered(asset.institution);
+    if !registered {
         return error ValidationError("'" + asset.institution
                 + "' is not a registered institution; register it via POST /library/institutions first");
     }
@@ -182,73 +149,57 @@ isolated function validateAsset(Asset asset) returns ValidationError? {
 # Full replacement (idempotent PUT). The tag in the path wins over the tag in
 # the payload so the unique key can never be changed by an update.
 public isolated function replaceAsset(string assetTag, Asset asset)
-        returns Asset|NotFoundError|ValidationError {
+        returns Asset|NotFoundError|ValidationError|StoreError {
     Asset replacement = asset.clone();
     replacement.assetTag = assetTag;
-    ValidationError? invalid = validateAsset(replacement);
-    if invalid is ValidationError {
-        return invalid;
-    }
+    check validateAsset(replacement);
     lock {
-        if !assetStore.hasKey(assetTag) {
+        storeRevision += 1;
+        boolean exists = check assetExists(assetTag);
+        if !exists {
             return error NotFoundError("No asset found with tag '" + assetTag + "'");
         }
-        assetStore[assetTag] = replacement.clone();
+        check saveAsset(replacement.clone());
         return replacement.clone();
     }
 }
 
 # Partial update (PATCH). Only the fields present in the payload are applied.
+# One SQL UPDATE does the work (see `updateAssetFields` in db.bal): fields the
+# payload leaves out are bound as NULL and `COALESCE` keeps the stored value.
 public isolated function patchAsset(string assetTag, AssetPatch patch)
-        returns Asset|NotFoundError|ValidationError {
+        returns Asset|NotFoundError|ValidationError|StoreError {
     string? newDate = patch?.dateAcquired;
     if newDate is string && !isValidDate(newDate) {
         return error ValidationError("'dateAcquired' must be a calendar date in YYYY-MM-DD form");
     }
     string? newInstitution = patch?.institution;
-    if newInstitution is string && !institutionIsRegistered(newInstitution) {
-        return error ValidationError("'" + newInstitution + "' is not a registered institution");
+    if newInstitution is string {
+        boolean registered = check institutionIsRegistered(newInstitution);
+        if !registered {
+            return error ValidationError("'" + newInstitution + "' is not a registered institution");
+        }
     }
+    string? newName = patch?.name;
+    string? newDescription = patch?.description;
+    string? newSite = patch?.site;
+    AssetStatus? newStatus = patch?.status;
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
+        storeRevision += 1;
+        int updated = check updateAssetFields(assetTag, newName, newDescription, newInstitution,
+                newSite, newStatus, newDate);
+        if updated == 0 {
             return error NotFoundError("No asset found with tag '" + assetTag + "'");
         }
-        AssetPatch changes = patch.clone();
-        string? name = changes?.name;
-        if name is string {
-            found.name = name;
-        }
-        string? description = changes?.description;
-        if description is string {
-            found.description = description;
-        }
-        string? institution = changes?.institution;
-        if institution is string {
-            found.institution = institution;
-        }
-        string? site = changes?.site;
-        if site is string {
-            found.site = site;
-        }
-        AssetStatus? status = changes?.status;
-        if status is AssetStatus {
-            found.status = status;
-        }
-        string? dateAcquired = changes?.dateAcquired;
-        if dateAcquired is string {
-            found.dateAcquired = dateAcquired;
-        }
-        return found.clone();
+        return loadAsset(assetTag);
     }
 }
 
-public isolated function deleteAsset(string assetTag) returns Asset|NotFoundError {
+public isolated function deleteAsset(string assetTag) returns Asset|NotFoundError|StoreError {
     lock {
-        Asset? removed = assetStore.removeIfHasKey(assetTag);
-        if removed is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset removed = check loadAsset(assetTag);
+        check deleteAssetRow(assetTag);
         return removed.clone();
     }
 }
@@ -256,15 +207,13 @@ public isolated function deleteAsset(string assetTag) returns Asset|NotFoundErro
 // ------------------------------- components --------------------------------
 
 public isolated function addComponent(string assetTag, Component component)
-        returns Asset|NotFoundError|ConflictError|ValidationError {
+        returns Asset|NotFoundError|ConflictError|ValidationError|StoreError {
     if component.compId.trim() == "" || component.name.trim() == "" {
         return error ValidationError("'compId' and 'name' are required for a component");
     }
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         foreach Component existing in found.components {
             if existing.compId == component.compId {
                 return error ConflictError("Component '" + component.compId
@@ -272,16 +221,15 @@ public isolated function addComponent(string assetTag, Component component)
             }
         }
         found.components.push(component.clone());
+        check saveAsset(found);
         return found.clone();
     }
 }
 
-public isolated function removeComponent(string assetTag, string compId) returns Asset|NotFoundError {
+public isolated function removeComponent(string assetTag, string compId) returns Asset|NotFoundError|StoreError {
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         Component[] remaining = from Component component in found.components
             where component.compId != compId
             select component;
@@ -289,6 +237,7 @@ public isolated function removeComponent(string assetTag, string compId) returns
             return error NotFoundError("Asset '" + assetTag + "' has no component '" + compId + "'");
         }
         found.components = remaining;
+        check saveAsset(found);
         return found.clone();
     }
 }
@@ -296,7 +245,7 @@ public isolated function removeComponent(string assetTag, string compId) returns
 // -------------------------------- schedules --------------------------------
 
 public isolated function addSchedule(string assetTag, Schedule schedule)
-        returns Asset|NotFoundError|ConflictError|ValidationError {
+        returns Asset|NotFoundError|ConflictError|ValidationError|StoreError {
     if schedule.scheduleId.trim() == "" {
         return error ValidationError("'scheduleId' is required for a schedule");
     }
@@ -304,10 +253,8 @@ public isolated function addSchedule(string assetTag, Schedule schedule)
         return error ValidationError("'dueDate' must be a calendar date in YYYY-MM-DD form");
     }
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         foreach Schedule existing in found.schedules {
             if existing.scheduleId == schedule.scheduleId {
                 return error ConflictError("Schedule '" + schedule.scheduleId
@@ -315,16 +262,15 @@ public isolated function addSchedule(string assetTag, Schedule schedule)
             }
         }
         found.schedules.push(schedule.clone());
+        check saveAsset(found);
         return found.clone();
     }
 }
 
-public isolated function removeSchedule(string assetTag, string scheduleId) returns Asset|NotFoundError {
+public isolated function removeSchedule(string assetTag, string scheduleId) returns Asset|NotFoundError|StoreError {
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         Schedule[] remaining = from Schedule schedule in found.schedules
             where schedule.scheduleId != scheduleId
             select schedule;
@@ -335,6 +281,7 @@ public isolated function removeSchedule(string assetTag, string scheduleId) retu
         if found.status == OCCUPIED && !hasActiveBooking(found) {
             found.status = AVAILABLE;
         }
+        check saveAsset(found);
         return found.clone();
     }
 }
@@ -355,7 +302,7 @@ isolated function hasActiveBooking(Asset asset) returns boolean {
 # `BOOKING` schedule so that a single collection carries both servicing and
 # occupancy information for the resource.
 public isolated function bookAsset(string assetTag, BookingRequest request)
-        returns Asset|NotFoundError|ConflictError|ValidationError {
+        returns Asset|NotFoundError|ConflictError|ValidationError|StoreError {
     if request.bookedBy.trim() == "" {
         return error ValidationError("'bookedBy' is required");
     }
@@ -366,12 +313,10 @@ public isolated function bookAsset(string assetTag, BookingRequest request)
     if span is error || span <= 0 {
         return error ValidationError("'endDate' must be after 'startDate'");
     }
-    string scheduleId = nextId("BKG");
+    string scheduleId = check nextId("BKG");
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         if found.status == UNDER_MAINTENANCE || found.status == DISPOSED {
             return error ConflictError("Asset '" + assetTag + "' is " + found.status
                     + " and cannot be booked");
@@ -398,6 +343,7 @@ public isolated function bookAsset(string assetTag, BookingRequest request)
             description: booking.description
         });
         found.status = OCCUPIED;
+        check saveAsset(found);
         return found.clone();
     }
 }
@@ -405,16 +351,14 @@ public isolated function bookAsset(string assetTag, BookingRequest request)
 // ------------------------------- work orders -------------------------------
 
 public isolated function addWorkOrder(string assetTag, WorkOrder workOrder)
-        returns Asset|NotFoundError|ConflictError|ValidationError {
+        returns Asset|NotFoundError|ConflictError|ValidationError|StoreError {
     if workOrder.description.trim() == "" {
         return error ValidationError("'description' is required for a work order");
     }
-    string generated = nextId("WO");
+    string generated = check nextId("WO");
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         WorkOrder candidate = workOrder.clone();
         if candidate.orderId.trim() == "" {
             candidate.orderId = generated;
@@ -430,17 +374,16 @@ public isolated function addWorkOrder(string assetTag, WorkOrder workOrder)
         }
         found.workOrders.push(candidate);
         found.status = UNDER_MAINTENANCE;
+        check saveAsset(found);
         return found.clone();
     }
 }
 
 public isolated function updateWorkOrder(string assetTag, string orderId, WorkOrderUpdate update)
-        returns Asset|NotFoundError {
+        returns Asset|NotFoundError|StoreError {
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         WorkOrderUpdate change = update.clone();
         boolean matched = false;
         foreach WorkOrder workOrder in found.workOrders {
@@ -463,6 +406,7 @@ public isolated function updateWorkOrder(string assetTag, string orderId, WorkOr
         if !hasOpenWorkOrder(found) && found.status == UNDER_MAINTENANCE {
             found.status = AVAILABLE;
         }
+        check saveAsset(found);
         return found.clone();
     }
 }
@@ -477,16 +421,14 @@ isolated function hasOpenWorkOrder(Asset asset) returns boolean {
 }
 
 public isolated function addTask(string assetTag, string orderId, Task task)
-        returns Asset|NotFoundError|ConflictError|ValidationError {
+        returns Asset|NotFoundError|ConflictError|ValidationError|StoreError {
     if task.description.trim() == "" {
         return error ValidationError("'description' is required for a task");
     }
-    string generated = nextId("T");
+    string generated = check nextId("T");
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         Task candidate = task.clone();
         if candidate.taskId.trim() == "" {
             candidate.taskId = generated;
@@ -502,6 +444,7 @@ public isolated function addTask(string assetTag, string orderId, Task task)
                 }
             }
             workOrder.tasks.push(candidate);
+            check saveAsset(found);
             return found.clone();
         }
         return error NotFoundError("Asset '" + assetTag + "' has no work order '" + orderId + "'");
@@ -509,12 +452,10 @@ public isolated function addTask(string assetTag, string orderId, Task task)
 }
 
 public isolated function removeTask(string assetTag, string orderId, string taskId)
-        returns Asset|NotFoundError {
+        returns Asset|NotFoundError|StoreError {
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         foreach WorkOrder workOrder in found.workOrders {
             if workOrder.orderId != orderId {
                 continue;
@@ -526,6 +467,7 @@ public isolated function removeTask(string assetTag, string orderId, string task
                 return error NotFoundError("Work order '" + orderId + "' has no task '" + taskId + "'");
             }
             workOrder.tasks = remaining;
+            check saveAsset(found);
             return found.clone();
         }
         return error NotFoundError("Asset '" + assetTag + "' has no work order '" + orderId + "'");
@@ -535,20 +477,18 @@ public isolated function removeTask(string assetTag, string orderId, string task
 // ---------------------------------- loans ----------------------------------
 
 public isolated function loanAsset(string assetTag, LoanRequest request)
-        returns Asset|NotFoundError|ConflictError|ValidationError {
+        returns Asset|NotFoundError|ConflictError|ValidationError|StoreError {
     if request.borrower.trim() == "" {
         return error ValidationError("'borrower' is required");
     }
     if !isValidDate(request.dueDate) {
         return error ValidationError("'dueDate' must be a calendar date in YYYY-MM-DD form");
     }
-    string loanId = nextId("LN");
+    string loanId = check nextId("LN");
     string loanDate = today();
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         if found.status != AVAILABLE {
             return error ConflictError("Asset '" + assetTag + "' is currently " + found.status
                     + " and cannot be loaned out");
@@ -561,17 +501,16 @@ public isolated function loanAsset(string assetTag, LoanRequest request)
             dueDate: loanRequest.dueDate
         };
         found.status = LOANED_OUT;
+        check saveAsset(found);
         return found.clone();
     }
 }
 
-public isolated function returnAsset(string assetTag) returns Asset|NotFoundError|ConflictError {
+public isolated function returnAsset(string assetTag) returns Asset|NotFoundError|ConflictError|StoreError {
     string returnDate = today();
     lock {
-        Asset? found = assetStore[assetTag];
-        if found is () {
-            return error NotFoundError("No asset found with tag '" + assetTag + "'");
-        }
+        storeRevision += 1;
+        Asset found = check loadAsset(assetTag);
         Loan? loan = found.currentLoan;
         if loan is () || found.status != LOANED_OUT {
             return error ConflictError("Asset '" + assetTag + "' is not currently on loan");
@@ -579,6 +518,7 @@ public isolated function returnAsset(string assetTag) returns Asset|NotFoundErro
         loan.returnedDate = returnDate;
         found.currentLoan = ();
         found.status = AVAILABLE;
+        check saveAsset(found);
         return found.clone();
     }
 }
@@ -586,51 +526,19 @@ public isolated function returnAsset(string assetTag) returns Asset|NotFoundErro
 // ------------------------- maintenance / overdue ---------------------------
 
 # Every maintenance, servicing or inspection schedule whose due date has passed.
-public isolated function overdueSchedules() returns OverdueEntry[] {
+public isolated function overdueSchedules() returns OverdueEntry[]|StoreError {
     string now = today();
-    lock {
-        OverdueEntry[] entries = [];
-        foreach Asset asset in assetStore {
-            if asset.status == DISPOSED {
-                continue;
-            }
-            foreach Schedule schedule in asset.schedules {
-                if schedule.'type == BOOKING {
-                    continue;
-                }
-                int|error elapsed = daysBetween(schedule.dueDate, now);
-                if elapsed is error || elapsed <= 0 {
-                    continue;
-                }
-                entries.push({
-                    assetTag: asset.assetTag,
-                    name: asset.name,
-                    institution: asset.institution,
-                    site: asset.site,
-                    status: asset.status,
-                    scheduleId: schedule.scheduleId,
-                    scheduleType: schedule.'type,
-                    dueDate: schedule.dueDate,
-                    daysOverdue: elapsed,
-                    description: schedule.description
-                });
-            }
+    Asset[] assets = check listAssets();
+    OverdueEntry[] entries = [];
+    foreach Asset asset in assets {
+        if asset.status == DISPOSED {
+            continue;
         }
-        return entries.clone();
-    }
-}
-
-# Every asset still on loan past its due date.
-public isolated function overdueLoans() returns OverdueLoan[] {
-    string now = today();
-    lock {
-        OverdueLoan[] entries = [];
-        foreach Asset asset in assetStore {
-            Loan? loan = asset.currentLoan;
-            if loan is () {
+        foreach Schedule schedule in asset.schedules {
+            if schedule.'type == BOOKING {
                 continue;
             }
-            int|error elapsed = daysBetween(loan.dueDate, now);
+            int|error elapsed = daysBetween(schedule.dueDate, now);
             if elapsed is error || elapsed <= 0 {
                 continue;
             }
@@ -638,11 +546,41 @@ public isolated function overdueLoans() returns OverdueLoan[] {
                 assetTag: asset.assetTag,
                 name: asset.name,
                 institution: asset.institution,
-                borrower: loan.borrower,
-                dueDate: loan.dueDate,
-                daysOverdue: elapsed
+                site: asset.site,
+                status: asset.status,
+                scheduleId: schedule.scheduleId,
+                scheduleType: schedule.'type,
+                dueDate: schedule.dueDate,
+                daysOverdue: elapsed,
+                description: schedule.description
             });
         }
-        return entries.clone();
     }
+    return entries;
+}
+
+# Every asset still on loan past its due date.
+public isolated function overdueLoans() returns OverdueLoan[]|StoreError {
+    string now = today();
+    Asset[] assets = check listAssets();
+    OverdueLoan[] entries = [];
+    foreach Asset asset in assets {
+        Loan? loan = asset.currentLoan;
+        if loan is () {
+            continue;
+        }
+        int|error elapsed = daysBetween(loan.dueDate, now);
+        if elapsed is error || elapsed <= 0 {
+            continue;
+        }
+        entries.push({
+            assetTag: asset.assetTag,
+            name: asset.name,
+            institution: asset.institution,
+            borrower: loan.borrower,
+            dueDate: loan.dueDate,
+            daysOverdue: elapsed
+        });
+    }
+    return entries;
 }

@@ -17,9 +17,16 @@ configurable int port = 8080;
 
 listener http:Listener apiListener = new (port);
 
-# Seeds the store with the institutions of higher learning registered with the
-# Ministry, plus a couple of demonstration assets.
+# Seeds the database with the institutions of higher learning registered with
+# the Ministry, plus a couple of demonstration assets. Seeding only happens on
+# the very first start; after that the data already in SQLite is used as is.
 function init() returns error? {
+    boolean empty = check isDatabaseEmpty();
+    if !empty {
+        Asset[] stored = check listAssets();
+        log:printInfo("Library API started", port = port, database = dbFile, assets = stored.length());
+        return ();
+    }
     Institution[] seedInstitutions = [
         {
             institutionId: "NUST",
@@ -108,7 +115,8 @@ function init() returns error? {
             return added;
         }
     }
-    log:printInfo("Library API started", port = port, assets = seedAssets.length());
+    log:printInfo("Library API started with a fresh database", port = port, database = dbFile,
+            assets = seedAssets.length());
     return ();
 }
 
@@ -124,13 +132,14 @@ service /library on apiListener {
     // ----------------------------- institutions ----------------------------
 
     # Lists every registered institution.
-    resource function get institutions() returns Institution[] {
-        return listInstitutions();
+    resource function get institutions() returns Institution[]|ApiError {
+        Institution[]|error result = listInstitutions();
+        return result is Institution[] ? result : toApiError(result, "institutions");
     }
 
     # Looks up a single institution.
     resource function get institutions/[string institutionId]() returns Institution|ApiError {
-        Institution|NotFoundError result = getInstitution(institutionId);
+        Institution|error result = getInstitution(institutionId);
         return result is Institution ? result : toApiError(result, institutionId);
     }
 
@@ -177,23 +186,25 @@ service /library on apiListener {
                         + "AVAILABLE, LOANED_OUT, OCCUPIED, UNDER_MAINTENANCE, DISPOSED", "status");
             }
         }
-        return filterAssets(institution, site, statusFilter);
+        Asset[]|error assets = filterAssets(institution, site, statusFilter);
+        return assets is Asset[] ? assets : toApiError(assets, "assets");
     }
 
     # Campus view: every asset belonging to one institution, optionally narrowed
     # to a single site.
     resource function get institutions/[string institutionId]/assets(string? site = ())
             returns Asset[]|ApiError {
-        Institution|NotFoundError institution = getInstitution(institutionId);
-        if institution is NotFoundError {
+        Institution|error institution = getInstitution(institutionId);
+        if institution is error {
             return toApiError(institution, institutionId);
         }
-        return filterAssets(institution.name, site, ());
+        Asset[]|error assets = filterAssets(institution.name, site, ());
+        return assets is Asset[] ? assets : toApiError(assets, institutionId);
     }
 
     # Looks up one asset by its unique tag.
     resource function get assets/[string assetTag]() returns Asset|ApiError {
-        Asset|NotFoundError result = getAsset(assetTag);
+        Asset|error result = getAsset(assetTag);
         return result is Asset ? result : toApiError(result, assetTag);
     }
 
@@ -224,14 +235,14 @@ service /library on apiListener {
 
     # Removes an asset from the register.
     resource function delete assets/[string assetTag]() returns Asset|ApiError {
-        Asset|NotFoundError result = deleteAsset(assetTag);
+        Asset|error result = deleteAsset(assetTag);
         return result is Asset ? result : toApiError(result, assetTag);
     }
 
     // ------------------------------ components -----------------------------
 
     resource function get assets/[string assetTag]/components() returns Component[]|ApiError {
-        Asset|NotFoundError result = getAsset(assetTag);
+        Asset|error result = getAsset(assetTag);
         return result is Asset ? result.components : toApiError(result, assetTag);
     }
 
@@ -242,14 +253,14 @@ service /library on apiListener {
     }
 
     resource function delete assets/[string assetTag]/components/[string compId]() returns Asset|ApiError {
-        Asset|NotFoundError result = removeComponent(assetTag, compId);
+        Asset|error result = removeComponent(assetTag, compId);
         return result is Asset ? result : toApiError(result, compId);
     }
 
     // ------------------------------- schedules -----------------------------
 
     resource function get assets/[string assetTag]/schedules() returns Schedule[]|ApiError {
-        Asset|NotFoundError result = getAsset(assetTag);
+        Asset|error result = getAsset(assetTag);
         return result is Asset ? result.schedules : toApiError(result, assetTag);
     }
 
@@ -260,14 +271,14 @@ service /library on apiListener {
     }
 
     resource function delete assets/[string assetTag]/schedules/[string scheduleId]() returns Asset|ApiError {
-        Asset|NotFoundError result = removeSchedule(assetTag, scheduleId);
+        Asset|error result = removeSchedule(assetTag, scheduleId);
         return result is Asset ? result : toApiError(result, scheduleId);
     }
 
     // ------------------------------ work orders ----------------------------
 
     resource function get assets/[string assetTag]/workorders() returns WorkOrder[]|ApiError {
-        Asset|NotFoundError result = getAsset(assetTag);
+        Asset|error result = getAsset(assetTag);
         return result is Asset ? result.workOrders : toApiError(result, assetTag);
     }
 
@@ -281,7 +292,7 @@ service /library on apiListener {
     # Updates or closes a work order.
     resource function put assets/[string assetTag]/workorders/[string orderId](@http:Payload WorkOrderUpdate update)
             returns Asset|ApiError {
-        Asset|NotFoundError result = updateWorkOrder(assetTag, orderId, update);
+        Asset|error result = updateWorkOrder(assetTag, orderId, update);
         return result is Asset ? result : toApiError(result, orderId);
     }
 
@@ -294,7 +305,7 @@ service /library on apiListener {
 
     resource function delete assets/[string assetTag]/workorders/[string orderId]/tasks/[string taskId]()
             returns Asset|ApiError {
-        Asset|NotFoundError result = removeTask(assetTag, orderId, taskId);
+        Asset|error result = removeTask(assetTag, orderId, taskId);
         return result is Asset ? result : toApiError(result, taskId);
     }
 
@@ -323,18 +334,24 @@ service /library on apiListener {
     // ------------------------ maintenance dashboards -----------------------
 
     # Every maintenance/servicing schedule whose due date has passed.
-    resource function get maintenance/overdue() returns OverdueEntry[] {
-        return overdueSchedules();
+    resource function get maintenance/overdue() returns OverdueEntry[]|ApiError {
+        OverdueEntry[]|error result = overdueSchedules();
+        return result is OverdueEntry[] ? result : toApiError(result, "maintenance/overdue");
     }
 
     # Every asset still on loan past its due date.
-    resource function get loans/overdue() returns OverdueLoan[] {
-        return overdueLoans();
+    resource function get loans/overdue() returns OverdueLoan[]|ApiError {
+        OverdueLoan[]|error result = overdueLoans();
+        return result is OverdueLoan[] ? result : toApiError(result, "loans/overdue");
     }
 
     # Liveness probe.
-    resource function get health() returns record {|string status; int assets;|} {
-        return {status: "UP", assets: listAssets().length()};
+    resource function get health() returns record {|string status; int assets;|}|ApiError {
+        Asset[]|error assets = listAssets();
+        if assets is error {
+            return toApiError(assets, "health");
+        }
+        return {status: "UP", assets: assets.length()};
     }
 }
 

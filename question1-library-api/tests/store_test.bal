@@ -1,8 +1,8 @@
 import ballerina/test;
 
-// Unit tests for the data store and the date helpers. They run against the
-// same in-memory store the service uses, which is seeded by `init()` before
-// the first test executes.
+// Unit tests for the data store and the date helpers. They run against a
+// separate SQLite file (see tests/Config.toml) that is wiped on start-up and
+// then seeded by `init()` before the first test executes.
 
 @test:Config {}
 function testDateHelpers() returns error? {
@@ -17,9 +17,9 @@ function testDateHelpers() returns error? {
 }
 
 @test:Config {}
-function testSeededCatalogue() {
-    test:assertTrue(listInstitutions().length() >= 3, "the Ministry listing should be seeded");
-    test:assertTrue(listAssets().length() >= 4, "the sample catalogue should be seeded");
+function testSeededCatalogue() returns error? {
+    test:assertTrue((check listInstitutions()).length() >= 3, "the Ministry listing should be seeded");
+    test:assertTrue((check listAssets()).length() >= 4, "the sample catalogue should be seeded");
 }
 
 @test:Config {}
@@ -127,7 +127,7 @@ function testOverdueDetection() returns error? {
         dueDate: "2020-01-01",
         description: "Deliberately elapsed schedule"
     });
-    OverdueEntry[] overdue = overdueSchedules();
+    OverdueEntry[] overdue = check overdueSchedules();
     OverdueEntry[] matching = from OverdueEntry entry in overdue
         where entry.scheduleId == "TEST-SCH-PAST"
         select entry;
@@ -144,12 +144,23 @@ function testInstitutionCannotBeRemovedWhileInUse() {
 }
 
 @test:Config {}
-function testFilterByInstitutionAndSite() {
-    Asset[] unam = filterAssets("University of Namibia", (), ());
+function testFilterByInstitutionAndSite() returns error? {
+    Asset[] unam = check filterAssets("University of Namibia", (), ());
     test:assertTrue(unam.length() >= 2);
-    Asset[] oshakati = filterAssets("University of Namibia", "Oshakati Campus", ());
+    Asset[] oshakati = check filterAssets("University of Namibia", "Oshakati Campus", ());
     test:assertTrue(oshakati.length() >= 1);
     foreach Asset asset in oshakati {
         test:assertEquals(asset.site, "Oshakati Campus");
     }
+}
+
+@test:Config {}
+function testPatchIsPersisted() returns error? {
+    Asset before = check getAsset("NUST-LIB-3DP-001");
+    Asset patched = check patchAsset("NUST-LIB-3DP-001", {description: "Patched through SQLite"});
+    test:assertEquals(patched.description, "Patched through SQLite");
+    test:assertEquals(patched.name, before.name, "fields left out of the patch must keep their value");
+    Asset reread = check getAsset("NUST-LIB-3DP-001");
+    test:assertEquals(reread.description, "Patched through SQLite", "the change must be read back from the database");
+    test:assertTrue(patchAsset("NO-SUCH-TAG", {name: "x"}) is NotFoundError);
 }

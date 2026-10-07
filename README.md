@@ -64,4 +64,6 @@ properties `PROP-001` to `PROP-004` (`PROP-004` is unavailable).
   the API is not up yet.
 * If `bal build` / `bal run` seems stuck, it is usually resolving dependencies
   online; `bal run --offline` uses the local cache.
-* All state is in memory, so restarting a server resets it to the seed data.
+* Question 1 stores its data in `question1-library-api/library.db` (SQLite). It is
+  created and seeded on the first run; delete the file to start again from the
+  seed data. Question 2 keeps its state in memory.

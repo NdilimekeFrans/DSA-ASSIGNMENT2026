@@ -57,12 +57,5 @@ public isolated function rangesOverlap(string aStart, string aEnd, string bStart
     return aS < be && bs < ae;
 }
 
-isolated int sequence = 1000;
-
-# Generates a readable, monotonically increasing identifier such as `LN-1001`.
-public isolated function nextId(string prefix) returns string {
-    lock {
-        sequence += 1;
-        return prefix + "-" + sequence.toString();
-    }
-}
+// `nextId` (readable identifiers such as `LN-1001`) now lives in db.bal so the
+// counter is stored in the database and survives restarts.
