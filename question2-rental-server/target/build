@@ -1,6 +1,6 @@
 {
-  "last_build_time": 1791232383088,
-  "last_update_time": 1791232383088,
+  "last_build_time": 1791362771220,
+  "last_update_time": 1791362771220,
   "last_bal_toml_update_time": 1788382542122,
   "distribution_version": "2201.13.5",
   "last_modified_time": {
@@ -8,6 +8,7 @@
   },
   "last_build_options": {
     "compilationOptions": {
+      "offlineBuild": true,
       "observabilityIncluded": false,
       "dumpBir": false,
       "cloud": "",
@@ -49,9 +50,9 @@
   ],
   "target_exec_meta_info": {
     "file": "C:\\Users\\howos\\OneDrive\\Desktop\\DSA612S-Assignment1\\question2-rental-server\\target\\backup\\bin\\rental_server.jar",
-    "hash": "48203135ed6edaab2fb39e4f4d9f554acf345605e5afd51dd2479458536f66c1",
-    "size": 44655247,
-    "lastModifiedTime": 1791232384202
+    "hash": "3db5df1d4d2861f1557d86a97c6505af1fe62d27d1bc2f5fb0634c591c7f2a3b",
+    "size": 44655259,
+    "lastModifiedTime": 1791362774770
   },
   "settings_meta_info": {
     "file": "C:\\Users\\howos\\.ballerina\\Settings.toml",

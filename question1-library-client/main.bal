@@ -1,18 +1,27 @@
 import ballerina/http;
 import ballerina/io;
+import ballerina/time;
 
 // ---------------------------------------------------------------------------
 // Command-line console for the Distributed Library and Resource Management
 // System. It talks to the Ballerina REST backend over HTTP and exercises every
 // operation the API exposes: the global view, the campus view, the overdue
-// dashboard, loans and room bookings, schedules, components and work orders.
+// dashboard, loans and room bookings, schedules, components, work orders and
+// institutions.
+//
+// Every choice is made from a numbered menu, inputs are checked before they
+// are sent, and server errors are shown as a short readable message.
 // ---------------------------------------------------------------------------
 
 configurable string apiUrl = "http://localhost:8080/library";
 
 final http:Client libraryApi = check new (apiUrl);
 
-public function main() returns error? {
+final string[] & readonly ASSET_STATUSES = ["AVAILABLE", "LOANED_OUT", "OCCUPIED", "UNDER_MAINTENANCE", "DISPOSED"];
+final string[] & readonly SCHEDULE_TYPES = ["MAINTENANCE", "SERVICING", "INSPECTION"];
+final string[] & readonly WORK_ORDER_STATUSES = ["OPEN", "IN_PROGRESS", "CLOSED"];
+
+public function main() {
     io:println();
     io:println("=========================================================");
     io:println(" Ministry of Higher Education, Training and Innovations");
@@ -20,7 +29,16 @@ public function main() returns error? {
     io:println(" Connected to: ", apiUrl);
     io:println("=========================================================");
 
-    check checkConnection();
+    while !isConnected() {
+        io:println();
+        io:println("Cannot reach the API at ", apiUrl);
+        io:println("Start the backend first:  cd question1-library-api && bal run");
+        string again = io:readln("Press Enter to try again, or type 0 to exit: ").trim();
+        if again == "0" {
+            io:println("Goodbye.");
+            return;
+        }
+    }
 
     while true {
         printMenu();
@@ -30,11 +48,14 @@ public function main() returns error? {
             io:println("Goodbye.");
             return;
         }
+        if choice == "" {
+            continue;
+        }
         error? outcome = dispatch(choice);
         if outcome is error {
             report(outcome);
         }
-        io:println();
+        pause();
     }
 }
 
@@ -88,7 +109,8 @@ function dispatch(string choice) returns error? {
 }
 
 function printMenu() {
-    io:println("---------------------------------------------------------");
+    io:println();
+    io:println("========================= MAIN MENU =====================");
     io:println(" 1. Global view - all assets in the Ministry");
     io:println(" 2. Campus view - filter by institution / site / status");
     io:println(" 3. Look up an asset by tag");
@@ -99,27 +121,23 @@ function printMenu() {
     io:println(" 8. Return a loaned asset");
     io:println(" 9. Book a lab or meeting room");
     io:println("10. Overdue dashboard");
-    io:println("11. Schedule manager (add / remove)");
-    io:println("12. Component manager (add / remove)");
+    io:println("11. Schedules   (list / add / remove)");
+    io:println("12. Components  (list / add / remove)");
     io:println("13. Work orders and tasks");
-    io:println("14. Institutions (list / add / remove)");
+    io:println("14. Institutions and sites");
     io:println(" 0. Exit");
-    io:println("---------------------------------------------------------");
+    io:println("=========================================================");
 }
 
 // ------------------------------- operations --------------------------------
 
-function checkConnection() returns error? {
+function isConnected() returns boolean {
     record {|string status; int assets;|}|error health = libraryApi->get("/health");
     if health is error {
-        io:println();
-        io:println("Cannot reach the API at ", apiUrl);
-        io:println("Start the backend first:  cd question1-library-api && bal run");
-        return health;
+        return false;
     }
     io:println(" Service status: ", health.status, " (", health.assets, " assets registered)");
-    io:println();
-    return;
+    return true;
 }
 
 function viewAllAssets() returns error? {
@@ -129,62 +147,81 @@ function viewAllAssets() returns error? {
 }
 
 function viewByCampus() returns error? {
-    string institution = io:readln("Institution (blank for all): ").trim();
-    string site = io:readln("Site / campus (blank for all): ").trim();
-    string status = io:readln("Status (blank for any): ").trim().toUpperAscii();
-
     string[] query = [];
-    if institution != "" {
-        query.push("institution=" + encode(institution));
-    }
-    if site != "" {
-        query.push("site=" + encode(site));
-    }
-    if status != "" {
-        query.push("status=" + encode(status));
-    }
-    string path = "/assets" + (query.length() > 0 ? "?" + string:'join("&", ...query) : "");
 
+    Institution? institution = check pickInstitution("Filter by institution", true);
+    if institution is Institution {
+        query.push("institution=" + encode(institution.name));
+        string? site = pickFrom("Filter by site / campus", institution.sites, true);
+        if site is string {
+            query.push("site=" + encode(site));
+        }
+    }
+    string? status = pickFrom("Filter by status", ASSET_STATUSES, true);
+    if status is string {
+        query.push("status=" + status);
+    }
+
+    string path = "/assets" + (query.length() > 0 ? "?" + string:'join("&", ...query) : "");
     Asset[] assets = check libraryApi->get(path);
     printAssetTable(assets, "Filtered view");
     return;
 }
 
 function lookupAsset() returns error? {
-    string tag = io:readln("Asset tag: ").trim();
+    string tag = readRequired("Asset tag: ");
     Asset asset = check libraryApi->get("/assets/" + encode(tag));
     printAssetDetail(asset);
     return;
 }
 
 function createAsset() returns error? {
+    string tag = readRequired("Asset tag        : ");
+    string name = readRequired("Name             : ");
+    string description = io:readln("Description      : ").trim();
+
+    Institution? institution = check pickInstitution("Owning institution", false);
+    if institution is () {
+        return;
+    }
+    string site = pickSite(institution);
+    string dateAcquired = readDate("Date acquired (YYYY-MM-DD, blank for today): ", today());
+
     Asset asset = {
-        assetTag: io:readln("Asset tag        : ").trim(),
-        name: io:readln("Name             : ").trim(),
-        description: io:readln("Description      : ").trim(),
-        institution: io:readln("Institution      : ").trim(),
-        site: io:readln("Site / campus    : ").trim(),
-        dateAcquired: io:readln("Date acquired    : ").trim(),
+        assetTag: tag,
+        name: name,
+        description: description,
+        institution: institution.name,
+        site: site,
+        dateAcquired: dateAcquired,
         status: AVAILABLE
     };
     Asset created = check libraryApi->post("/assets", asset);
-    io:println("Registered ", created.assetTag, ".");
+    io:println("Registered ", created.assetTag, " (", created.name, ").");
     return;
 }
 
 function updateAsset() returns error? {
-    string tag = io:readln("Asset tag to update: ").trim();
+    string tag = readRequired("Asset tag to update: ");
+    Asset current = check libraryApi->get("/assets/" + encode(tag));
+    printAssetDetail(current);
+    io:println();
     io:println("Leave a field blank to keep its current value.");
+
     map<string> changes = {};
     addIfPresent(changes, "name", io:readln("New name        : "));
     addIfPresent(changes, "description", io:readln("New description : "));
     addIfPresent(changes, "site", io:readln("New site        : "));
-    addIfPresent(changes, "status", io:readln("New status      : "));
+    string? status = pickFrom("New status", ASSET_STATUSES, true);
+    if status is string {
+        changes["status"] = status;
+    }
     if changes.length() == 0 {
         io:println("Nothing to change.");
         return;
     }
     Asset updated = check libraryApi->patch("/assets/" + encode(tag), changes);
+    io:println("Asset updated.");
     printAssetDetail(updated);
     return;
 }
@@ -192,12 +229,12 @@ function updateAsset() returns error? {
 function addIfPresent(map<string> changes, string fieldName, string value) {
     string trimmed = value.trim();
     if trimmed != "" {
-        changes[fieldName] = fieldName == "status" ? trimmed.toUpperAscii() : trimmed;
+        changes[fieldName] = trimmed;
     }
 }
 
 function deleteAsset() returns error? {
-    string tag = io:readln("Asset tag to remove: ").trim();
+    string tag = readRequired("Asset tag to remove: ");
     string confirmation = io:readln("Type the tag again to confirm: ").trim();
     if confirmation != tag {
         io:println("Cancelled.");
@@ -209,10 +246,10 @@ function deleteAsset() returns error? {
 }
 
 function loanAsset() returns error? {
-    string tag = io:readln("Asset tag  : ").trim();
+    string tag = readRequired("Asset tag             : ");
     json request = {
-        borrower: io:readln("Borrower   : ").trim(),
-        dueDate: io:readln("Due back   : ").trim()
+        borrower: readRequired("Borrower (student no.): "),
+        dueDate: readDate("Due back (YYYY-MM-DD) : ", ())
     };
     Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/loan", request);
     Loan? loan = asset.currentLoan;
@@ -223,7 +260,7 @@ function loanAsset() returns error? {
 }
 
 function returnAsset() returns error? {
-    string tag = io:readln("Asset tag: ").trim();
+    string tag = readRequired("Asset tag: ");
     json emptyBody = {};
     Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/return", emptyBody);
     io:println(asset.assetTag, " is back on the shelf and ", asset.status, ".");
@@ -231,11 +268,11 @@ function returnAsset() returns error? {
 }
 
 function bookSpace() returns error? {
-    string tag = io:readln("Asset tag (lab / room) : ").trim();
+    string tag = readRequired("Asset tag (lab / room) : ");
     json request = {
-        bookedBy: io:readln("Booked by              : ").trim(),
-        startDate: io:readln("From (YYYY-MM-DD)      : ").trim(),
-        endDate: io:readln("To   (YYYY-MM-DD)      : ").trim(),
+        bookedBy: readRequired("Booked by              : "),
+        startDate: readDate("From (YYYY-MM-DD)      : ", ()),
+        endDate: readDate("To   (YYYY-MM-DD)      : ", ()),
         description: io:readln("Purpose                : ").trim()
     };
     Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/bookings", request);
@@ -273,117 +310,285 @@ function overdueDashboard() returns error? {
 }
 
 function manageSchedules() returns error? {
-    string action = io:readln("(a)dd or (r)emove a schedule? ").trim().toLowerAscii();
-    string tag = io:readln("Asset tag   : ").trim();
-    if action == "r" {
-        string scheduleId = io:readln("Schedule id : ").trim();
-        Asset asset = check libraryApi->delete("/assets/" + encode(tag) + "/schedules/"
-                + encode(scheduleId));
+    int action = subMenu("Schedules", ["List the schedules of an asset", "Add a schedule", "Remove a schedule"]);
+    if action == 0 {
+        return;
+    }
+    string tag = readRequired("Asset tag   : ");
+    string base = "/assets/" + encode(tag) + "/schedules";
+
+    if action == 1 {
+        Asset asset = check libraryApi->get("/assets/" + encode(tag));
+        if asset.schedules.length() == 0 {
+            io:println("No schedules on this asset.");
+        }
+        printSchedules(asset);
+        return;
+    }
+    if action == 3 {
+        string scheduleId = readRequired("Schedule id : ");
+        Asset asset = check libraryApi->delete(base + "/" + encode(scheduleId));
         io:println("Schedule removed.");
         printSchedules(asset);
         return;
     }
+    string scheduleId = readRequired("Schedule id : ");
+    string? scheduleType = pickFrom("Schedule type", SCHEDULE_TYPES, false);
     json schedule = {
-        scheduleId: io:readln("Schedule id : ").trim(),
-        'type: io:readln("Type (MAINTENANCE/SERVICING/INSPECTION): ").trim().toUpperAscii(),
-        dueDate: io:readln("Due date    : ").trim(),
+        scheduleId: scheduleId,
+        'type: scheduleType,
+        dueDate: readDate("Due date (YYYY-MM-DD): ", ()),
         description: io:readln("Description : ").trim()
     };
-    Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/schedules", schedule);
+    Asset asset = check libraryApi->post(base, schedule);
     io:println("Schedule added.");
     printSchedules(asset);
     return;
 }
 
 function manageComponents() returns error? {
-    string action = io:readln("(a)dd or (r)emove a component? ").trim().toLowerAscii();
-    string tag = io:readln("Asset tag    : ").trim();
-    if action == "r" {
-        string compId = io:readln("Component id : ").trim();
-        Asset asset = check libraryApi->delete("/assets/" + encode(tag) + "/components/" + encode(compId));
+    int action = subMenu("Components", ["List the components of an asset", "Add a component", "Remove a component"]);
+    if action == 0 {
+        return;
+    }
+    string tag = readRequired("Asset tag    : ");
+    string base = "/assets/" + encode(tag) + "/components";
+
+    if action == 1 {
+        Component[] components = check libraryApi->get(base);
+        printComponents(components);
+        return;
+    }
+    if action == 3 {
+        string compId = readRequired("Component id : ");
+        Asset asset = check libraryApi->delete(base + "/" + encode(compId));
         io:println("Component removed. ", asset.components.length(), " remaining.");
+        printComponents(asset.components);
         return;
     }
     json component = {
-        compId: io:readln("Component id : ").trim(),
-        name: io:readln("Name         : ").trim(),
+        compId: readRequired("Component id : "),
+        name: readRequired("Name         : "),
         description: io:readln("Description  : ").trim()
     };
-    Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/components", component);
-    io:println("Component added. The asset now has ", asset.components.length(), " components.");
+    Asset asset = check libraryApi->post(base, component);
+    io:println("Component added. The asset now has ", asset.components.length(), " component(s).");
+    printComponents(asset.components);
     return;
 }
 
 function manageWorkOrders() returns error? {
-    io:println("(o)pen a work order, (u)pdate its status, (t)ask add, (l)ist");
-    string action = io:readln("Choice     : ").trim().toLowerAscii();
-    string tag = io:readln("Asset tag  : ").trim();
+    int action = subMenu("Work orders and tasks", [
+        "List the work orders of an asset",
+        "Open a work order (fault report)",
+        "Update / close a work order",
+        "Add a task to a work order",
+        "Remove a task from a work order"
+    ]);
+    if action == 0 {
+        return;
+    }
+    string tag = readRequired("Asset tag  : ");
+    string base = "/assets/" + encode(tag) + "/workorders";
 
-    if action == "l" {
-        WorkOrder[] orders = check libraryApi->get("/assets/" + encode(tag) + "/workorders");
-        if orders.length() == 0 {
-            io:println("No work orders on this asset.");
-            return;
+    match action {
+        1 => {
+            WorkOrder[] orders = check libraryApi->get(base);
+            printWorkOrders(orders);
         }
-        foreach WorkOrder orderEntry in orders {
-            io:println("  ", fit(orderEntry.orderId, 12), fit(orderEntry.status, 14), orderEntry.description);
-            foreach Task task in orderEntry.tasks {
-                io:println("      - ", fit(task.taskId, 10), task.description);
-            }
+        2 => {
+            json workOrder = {orderId: "", status: "OPEN", description: readRequired("Fault      : ")};
+            Asset asset = check libraryApi->post(base, workOrder);
+            WorkOrder opened = asset.workOrders[asset.workOrders.length() - 1];
+            io:println("Opened work order ", opened.orderId, ". Asset is now ", asset.status, ".");
         }
-        return;
+        3 => {
+            string orderId = readRequired("Order id   : ");
+            string? status = pickFrom("New status", WORK_ORDER_STATUSES, false);
+            json update = {status: status};
+            Asset asset = check libraryApi->put(base + "/" + encode(orderId), update);
+            io:println("Work order updated. Asset is now ", asset.status, ".");
+        }
+        4 => {
+            string orderId = readRequired("Order id   : ");
+            json task = {taskId: "", description: readRequired("Task       : ")};
+            Asset asset = check libraryApi->post(base + "/" + encode(orderId) + "/tasks", task);
+            io:println("Task added to ", orderId, ".");
+            printWorkOrders(asset.workOrders);
+        }
+        5 => {
+            string orderId = readRequired("Order id   : ");
+            string taskId = readRequired("Task id    : ");
+            Asset asset = check libraryApi->delete(base + "/" + encode(orderId) + "/tasks/" + encode(taskId));
+            io:println("Task removed.");
+            printWorkOrders(asset.workOrders);
+        }
     }
-    if action == "u" {
-        string orderId = io:readln("Order id   : ").trim();
-        json update = {status: io:readln("New status (OPEN/IN_PROGRESS/CLOSED): ").trim().toUpperAscii()};
-        Asset asset = check libraryApi->put("/assets/" + encode(tag) + "/workorders/"
-                + encode(orderId), update);
-        io:println("Work order updated. Asset is now ", asset.status, ".");
-        return;
-    }
-    if action == "t" {
-        string orderId = io:readln("Order id   : ").trim();
-        json task = {taskId: "", description: io:readln("Task       : ").trim()};
-        Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/workorders/"
-                + encode(orderId) + "/tasks", task);
-        io:println("Task added to ", orderId, ". The asset now has ",
-                asset.workOrders.length(), " work order(s).");
-        return;
-    }
-    json workOrder = {orderId: "", status: "OPEN", description: io:readln("Fault      : ").trim()};
-    Asset asset = check libraryApi->post("/assets/" + encode(tag) + "/workorders", workOrder);
-    WorkOrder opened = asset.workOrders[asset.workOrders.length() - 1];
-    io:println("Opened work order ", opened.orderId, ". Asset is now ", asset.status, ".");
     return;
 }
 
 function manageInstitutions() returns error? {
-    io:println("(l)ist, (a)dd or (r)emove an institution");
-    string action = io:readln("Choice : ").trim().toLowerAscii();
-
-    if action == "a" {
-        json institution = {
-            institutionId: io:readln("Id     : ").trim(),
-            name: io:readln("Name   : ").trim(),
-            sites: [io:readln("Site   : ").trim()]
-        };
-        Institution added = check libraryApi->post("/institutions", institution);
-        io:println("Registered ", added.name, ".");
-        return;
-    }
-    if action == "r" {
-        string institutionId = io:readln("Id : ").trim();
-        Institution removed = check libraryApi->delete("/institutions/" + encode(institutionId));
-        io:println("Removed ", removed.name, " from the listing.");
-        return;
-    }
-    Institution[] institutions = check libraryApi->get("/institutions");
-    io:println("  ", fit("ID", 10), fit("NAME", 52), "SITES");
-    foreach Institution institution in institutions {
-        io:println("  ", fit(institution.institutionId, 10), fit(institution.name, 52),
-                string:'join(", ", ...institution.sites));
+    int action = subMenu("Institutions and sites", [
+        "List institutions",
+        "Campus view - assets of one institution",
+        "Register an institution",
+        "Add a site / campus to an institution",
+        "Remove an institution"
+    ]);
+    match action {
+        1 => {
+            Institution[] institutions = check libraryApi->get("/institutions");
+            printInstitutions(institutions);
+        }
+        2 => {
+            Institution? institution = check pickInstitution("Institution", false);
+            if institution is Institution {
+                Asset[] assets = check libraryApi->get("/institutions/" + encode(institution.institutionId)
+                        + "/assets");
+                printAssetTable(assets, institution.name);
+            }
+        }
+        3 => {
+            json institution = {
+                institutionId: readRequired("Id (e.g. NIMT) : ").toUpperAscii(),
+                name: readRequired("Full name      : "),
+                sites: [readRequired("First site     : ")]
+            };
+            Institution added = check libraryApi->post("/institutions", institution);
+            io:println("Registered ", added.name, ".");
+        }
+        4 => {
+            Institution? institution = check pickInstitution("Institution", false);
+            if institution is Institution {
+                json payload = {site: readRequired("New site / campus : ")};
+                Institution updated = check libraryApi->post("/institutions/"
+                        + encode(institution.institutionId) + "/sites", payload);
+                io:println(updated.name, " now has sites: ", string:'join(", ", ...updated.sites));
+            }
+        }
+        5 => {
+            Institution? institution = check pickInstitution("Institution to remove", false);
+            if institution is Institution {
+                Institution removed = check libraryApi->delete("/institutions/"
+                        + encode(institution.institutionId));
+                io:println("Removed ", removed.name, " from the listing.");
+            }
+        }
     }
     return;
+}
+
+// --------------------------------- pickers ---------------------------------
+
+# Lets the user pick an institution from the live list on the server.
+# Returns `()` when the user leaves the choice blank (only if `optional`).
+function pickInstitution(string title, boolean optional) returns Institution?|error {
+    Institution[] institutions = check libraryApi->get("/institutions");
+    if institutions.length() == 0 {
+        io:println("No institutions are registered yet.");
+        return ();
+    }
+    string[] labels = from Institution institution in institutions
+        select institution.institutionId + " - " + institution.name;
+    int? index = pickIndex(title, labels, optional);
+    return index is int ? institutions[index] : ();
+}
+
+# Lets the user pick one of the institution's sites, or type a new one.
+function pickSite(Institution institution) returns string {
+    string[] options = [...institution.sites, "Other (type a site name)"];
+    int? index = pickIndex("Site / campus", options, false);
+    if index is int && index < institution.sites.length() {
+        return institution.sites[index];
+    }
+    return readRequired("Site / campus name: ");
+}
+
+function pickFrom(string title, string[] options, boolean optional) returns string? {
+    int? index = pickIndex(title, options, optional);
+    return index is int ? options[index] : ();
+}
+
+# Prints a numbered list and keeps asking until a valid number is entered.
+# Returns the zero-based index, or `()` for a blank answer when `optional`.
+function pickIndex(string title, string[] options, boolean optional) returns int? {
+    io:println(title, ":");
+    foreach int i in 0 ..< options.length() {
+        io:println("   ", i + 1, ". ", options[i]);
+    }
+    string hint = optional ? " (Enter to skip)" : "";
+    while true {
+        string answer = io:readln("   Choose 1-" + options.length().toString() + hint + ": ").trim();
+        if answer == "" && optional {
+            return ();
+        }
+        int|error number = int:fromString(answer);
+        if number is int && number >= 1 && number <= options.length() {
+            return number - 1;
+        }
+        io:println("   Please enter a number between 1 and ", options.length(), ".");
+    }
+}
+
+# Shows a numbered sub-menu with a "back" option and returns the chosen
+# number (0 means back).
+function subMenu(string title, string[] options) returns int {
+    io:println("---- ", title, " ----");
+    foreach int i in 0 ..< options.length() {
+        io:println("  ", i + 1, ". ", options[i]);
+    }
+    io:println("  0. Back to main menu");
+    while true {
+        string answer = io:readln("Choose: ").trim();
+        int|error number = int:fromString(answer);
+        if number is int && number >= 0 && number <= options.length() {
+            return number;
+        }
+        io:println("Please enter a number between 0 and ", options.length(), ".");
+    }
+}
+
+// ---------------------------------- input ----------------------------------
+
+function readRequired(string label) returns string {
+    while true {
+        string value = io:readln(label).trim();
+        if value != "" {
+            return value;
+        }
+        io:println("   This field is required.");
+    }
+}
+
+# Reads a calendar date in YYYY-MM-DD form, re-asking until it is valid. A
+# blank answer returns `default` when one is given.
+function readDate(string label, string? default) returns string {
+    while true {
+        string value = io:readln(label).trim();
+        if value == "" && default is string {
+            return default;
+        }
+        if isValidDate(value) {
+            return value;
+        }
+        io:println("   Please enter a real date in the form YYYY-MM-DD, e.g. 2026-11-02.");
+    }
+}
+
+function isValidDate(string value) returns boolean {
+    if value.length() != 10 {
+        return false;
+    }
+    time:Utc|error parsed = time:utcFromString(value + "T00:00:00Z");
+    return parsed is time:Utc;
+}
+
+function today() returns string {
+    return time:utcToString(time:utcNow()).substring(0, 10);
+}
+
+function pause() {
+    _ = io:readln("\nPress Enter to return to the menu...");
 }
 
 // -------------------------------- rendering --------------------------------
@@ -415,20 +620,22 @@ function printAssetDetail(Asset asset) {
         io:println("On loan to   : ", loan.borrower, " until ", loan.dueDate, " (", loan.loanId, ")");
     }
     if asset.components.length() > 0 {
-        io:println("Components   :");
-        foreach Component component in asset.components {
-            io:println("   - ", fit(component.compId, 10), component.name);
-        }
+        printComponents(asset.components);
     }
     printSchedules(asset);
     if asset.workOrders.length() > 0 {
-        io:println("Work orders  :");
-        foreach WorkOrder orderEntry in asset.workOrders {
-            io:println("   - ", fit(orderEntry.orderId, 12), fit(orderEntry.status, 14), orderEntry.description);
-            foreach Task task in orderEntry.tasks {
-                io:println("        * ", task.description);
-            }
-        }
+        printWorkOrders(asset.workOrders);
+    }
+}
+
+function printComponents(Component[] components) {
+    if components.length() == 0 {
+        io:println("No components on this asset.");
+        return;
+    }
+    io:println("Components   :");
+    foreach Component component in components {
+        io:println("   - ", fit(component.compId, 10), fit(component.name, 30), component.description);
     }
 }
 
@@ -438,10 +645,32 @@ function printSchedules(Asset asset) {
     }
     io:println("Schedules    :");
     foreach Schedule schedule in asset.schedules {
-        string period = schedule.endDate is string ? schedule.dueDate + " -> " + (schedule.endDate ?: "")
-            : schedule.dueDate;
+        string? endDate = schedule.endDate;
+        string period = endDate is string ? schedule.dueDate + " -> " + endDate : schedule.dueDate;
         io:println("   - ", fit(schedule.scheduleId, 12), fit(schedule.'type, 14), fit(period, 26),
                 schedule.description);
+    }
+}
+
+function printWorkOrders(WorkOrder[] orders) {
+    if orders.length() == 0 {
+        io:println("No work orders on this asset.");
+        return;
+    }
+    io:println("Work orders  :");
+    foreach WorkOrder orderEntry in orders {
+        io:println("   - ", fit(orderEntry.orderId, 12), fit(orderEntry.status, 14), orderEntry.description);
+        foreach Task task in orderEntry.tasks {
+            io:println("        * ", fit(task.taskId, 10), task.description);
+        }
+    }
+}
+
+function printInstitutions(Institution[] institutions) {
+    io:println("  ", fit("ID", 10), fit("NAME", 52), "SITES");
+    foreach Institution institution in institutions {
+        io:println("  ", fit(institution.institutionId, 10), fit(institution.name, 52),
+                string:'join(", ", ...institution.sites));
     }
 }
 
@@ -468,6 +697,9 @@ function encode(string value) returns string {
     string encoded = "";
     foreach string:Char character in value {
         match character {
+            "%" => {
+                encoded += "%25";
+            }
             " " => {
                 encoded += "%20";
             }
@@ -483,6 +715,9 @@ function encode(string value) returns string {
             "/" => {
                 encoded += "%2F";
             }
+            "+" => {
+                encoded += "%2B";
+            }
             _ => {
                 encoded += character;
             }
@@ -492,16 +727,23 @@ function encode(string value) returns string {
 }
 
 # Prints a server-side failure in a way a user can act on: the HTTP status and
-# the uniform error body the API returns.
+# the message from the uniform error body the API returns.
 function report(error e) {
-    if e is http:ClientRequestError {
+    if e is http:ApplicationResponseError {
         http:Detail detail = e.detail();
-        io:println("  ! HTTP ", detail.statusCode, " - ", detail.body.toJsonString());
+        anydata body = detail.body;
+        string message = body.toString();
+        if body is map<anydata> {
+            anydata text = body["message"];
+            if text is string {
+                message = text;
+            }
+        }
+        io:println("  ! Error ", detail.statusCode, ": ", message);
         return;
     }
-    if e is http:RemoteServerError {
-        http:Detail detail = e.detail();
-        io:println("  ! HTTP ", detail.statusCode, " - ", detail.body.toJsonString());
+    if e is http:ClientConnectorError {
+        io:println("  ! Cannot reach the API at ", apiUrl, " - is the backend running?");
         return;
     }
     io:println("  ! ", e.message());
