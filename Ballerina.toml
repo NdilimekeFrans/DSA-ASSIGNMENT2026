@@ -1,23 +1,8 @@
 [package]
-
 org = "dewet"
-
-name = "campuslibrary"
-
+name = "client"
 version = "0.1.0"
-
 distribution = "2201.13.5"
 
 [build-options]
-
 observabilityIncluded = true
-
-[[dependency]]
-org = "ballerinax"
-name = "java.jdbc"
-version = "1.14.1"
-
-[[platform.java21.dependency]]
-groupId = "org.xerial"
-artifactId = "sqlite-jdbc"
-version = "3.46.1.0"
