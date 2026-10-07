@@ -1,0 +1,2075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Library Asset Management</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+
+        header {
+            background: #059669;
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        header h1 {
+            margin: 0 0 8px;
+        }
+
+        header p {
+            margin: 0;
+        }
+
+        nav {
+            background: white;
+            padding: 12px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav button {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        nav button:hover {
+            background: #047857;
+        }
+
+        .container {
+            width: 94%;
+            max-width: 1400px;
+            margin: 25px auto;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            margin-bottom: 25px;
+        }
+
+        h2 {
+            color: #059669;
+            margin-top: 0;
+        }
+
+        h3 {
+            color: #374151;
+        }
+
+        form {
+            display: grid;
+            gap: 12px;
+        }
+
+        input,
+        select,
+        button {
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #10b981;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #059669;
+        }
+
+        .danger {
+            background: #ef4444;
+        }
+
+        .danger:hover {
+            background: #dc2626;
+        }
+
+        .secondary {
+            background: #6b7280;
+        }
+
+        .secondary:hover {
+            background: #4b5563;
+        }
+
+        .warning {
+            background: #f59e0b;
+        }
+
+        .warning:hover {
+            background: #d97706;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 22px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+
+        .stat-card h3 {
+            margin: 0 0 10px;
+            font-size: 16px;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #059669;
+        }
+
+        .filters {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+        }
+
+        th,
+        td {
+            border: 1px solid #e2e8f0;
+            padding: 11px;
+            text-align: left;
+        }
+
+        th {
+            background: #059669;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        .available {
+            color: #059669;
+            font-weight: bold;
+        }
+
+        .unavailable {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .overdue {
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        .action-btn {
+            padding: 6px 10px;
+            margin: 2px;
+            font-size: 12px;
+        }
+
+        .message {
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 25px;
+            color: #6b7280;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 25px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .close {
+            float: right;
+            font-size: 25px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 900px) {
+            .stats,
+            .two-column {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .filters {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .stats,
+            .two-column {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th,
+            td {
+                padding: 7px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1> Campus Library Asset Management</h1>
+    <p>Distributed Library & Resource Management System</p>
+</header>
+
+<nav>
+    <button onclick="showSection('dashboard')"> Dashboard</button>
+    <button onclick="showSection('assets')"> Global View</button>
+    <button onclick="showSection('campus')"> Campus View</button>
+    <button onclick="showSection('addAsset')">Add Asset</button>
+    <button onclick="showSection('loan')"> Loaning</button>
+    <button onclick="showSection('schedule')"> Schedule Manager</button>
+    <button onclick="showSection('overdue')"> Overdue</button>
+    <button onclick="showSection('institutions')"> Institutions</button>
+</nav>
+
+<div class="container">
+
+    <div id="message" class="message"></div>
+
+
+   
+         ..DASHBOARD
+      
+
+    <section id="dashboard" class="section active">
+
+        <div class="card">
+            <h2> Global Dashboard</h2>
+            <p>Overview of all library assets across institutions and campuses.</p>
+        </div>
+
+        <div class="stats">
+
+            <div class="stat-card">
+                <h3>Total Assets</h3>
+                <div class="stat-number" id="totalAssets">0</div>
+            </div>
+
+            <div class="stat-card">
+                <h3>Available</h3>
+                <div class="stat-number" id="availableAssets">0</div>
+            </div>
+
+            <div class="stat-card">
+                <h3>Unavailable</h3>
+                <div class="stat-number" id="unavailableAssets">0</div>
+            </div>
+
+            <div class="stat-card">
+                <h3>Overdue Maintenance</h3>
+                <div class="stat-number" id="overdueCount">0</div>
+            </div>
+
+        </div>
+
+    </section>
+
+
+   
+         ..GLOBAL VIEW
+      
+
+    <section id="assets" class="section">
+
+        <div class="card">
+
+            <h2> Global Asset View</h2>
+
+            <div class="filters">
+
+                <select id="institutionFilter">
+                    <option value="">All Institutions</option>
+                </select>
+
+                <select id="siteFilter">
+                    <option value="">All Campuses / Sites</option>
+                </select>
+
+                <button onclick="applyFilters()"> Filter</button>
+
+            </div>
+
+            <button class="secondary" onclick="loadAssets()">
+                Refresh
+            </button>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Tag</th>
+                        <th>Name</th>
+                        <th>Institution</th>
+                        <th>Site</th>
+                        <th>Status</th>
+                        <th>Date Acquired</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody id="assetsTableBody"></tbody>
+            </table>
+
+        </div>
+
+    </section>
+
+
+   
+         ..CAMPUS VIEW
+        
+
+    <section id="campus" class="section">
+
+        <div class="card">
+
+            <h2> Campus / Site View</h2>
+
+            <p>
+                Select a campus or site to view the resources located there.
+            </p>
+
+            <select id="campusSelect" onchange="loadCampusAssets()">
+                <option value="">Select a Campus / Site</option>
+            </select>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Tag</th>
+                        <th>Name</th>
+                        <th>Institution</th>
+                        <th>Site</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody id="campusTableBody"></tbody>
+            </table>
+
+        </div>
+
+    </section>
+
+
+   
+         ..ADD ASSET
+     
+
+    <section id="addAsset" class="section">
+
+        <div class="card">
+
+            <h2> Add New Asset</h2>
+
+            <form id="assetForm">
+
+                <input
+                    type="text"
+                    id="assetTag"
+                    placeholder="Asset Tag (e.g. NUST-LIB-001)"
+                    required
+                >
+
+                <input
+                    type="text"
+                    id="name"
+                    placeholder="Asset Name"
+                    required
+                >
+
+                <input
+                    type="text"
+                    id="description"
+                    placeholder="Description"
+                >
+
+                <input
+                    type="text"
+                    id="institution"
+                    placeholder="Institution (e.g. NUST, UNAM, IUM)"
+                    required
+                >
+
+                <input
+                    type="text"
+                    id="site"
+                    placeholder="Campus / Site"
+                    required
+                >
+
+                <select id="status">
+
+                    <option value="AVAILABLE">
+                        AVAILABLE
+                    </option>
+
+                    <option value="NOT AVAILABLE">
+                        NOT AVAILABLE
+                    </option>
+
+                    <option value="UNDER MAINTENANCE">
+                        UNDER MAINTENANCE
+                    </option>
+
+                    <option value="DISPOSED">
+                        DISPOSED
+                    </option>
+
+                </select>
+
+                <input
+                    type="date"
+                    id="dateAcquired"
+                    required
+                >
+
+                <button type="submit">
+                    Add Asset to Database
+                </button>
+
+            </form>
+
+        </div>
+
+    </section>
+
+
+   
+         ..LOANING
+    
+
+    <section id="loan" class="section">
+
+        <div class="card">
+
+            <h2> Loaning & Booking</h2>
+
+            <p>
+                Select an available asset to loan it out.
+            </p>
+
+            <select id="loanAssetSelect">
+                <option value="">Select an available asset</option>
+            </select>
+
+            <br><br>
+
+            <button onclick="loanSelectedAsset()">
+                 Loan Asset
+            </button>
+
+        </div>
+
+
+        <div class="card">
+
+            <h3>Current Asset Availability</h3>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Tag</th>
+                        <th>Name</th>
+                        <th>Institution</th>
+                        <th>Site</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody id="loanAssetsTableBody"></tbody>
+            </table>
+
+        </div>
+
+    </section>
+
+
+   
+         ..SCHEDULE MANAGER
+   
+
+    <section id="schedule" class="section">
+
+        <div class="two-column">
+
+            <div class="card">
+
+                <h2> Add Schedule</h2>
+
+                <form id="scheduleForm">
+
+                    <select id="scheduleAsset" required>
+                        <option value="">Select Asset</option>
+                    </select>
+
+                    <select id="scheduleType">
+
+                        <option value="MAINTENANCE">
+                            MAINTENANCE
+                        </option>
+
+                        <option value="BOOKING">
+                            BOOKING
+                        </option>
+
+                    </select>
+
+                    <input
+                        type="text"
+                        id="scheduleId"
+                        placeholder="Schedule ID"
+                        required
+                    >
+
+                    <input
+                        type="date"
+                        id="scheduleDate"
+                        required
+                    >
+
+                    <input
+                        type="text"
+                        id="scheduleDescription"
+                        placeholder="Schedule description"
+                        required
+                    >
+
+                    <button type="submit">
+                        Add Schedule
+                    </button>
+
+                </form>
+
+            </div>
+
+
+            <div class="card">
+
+                <h2> View Asset Schedule</h2>
+
+                <select id="viewScheduleAsset">
+                    <option value="">Select Asset</option>
+                </select>
+
+                <br><br>
+
+                <button onclick="loadSchedules()">
+                    View Schedule
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2> Schedule List</h2>
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Schedule ID</th>
+                        <th>Type</th>
+                        <th>Due / Booking Date</th>
+                        <th>Description</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody id="scheduleTableBody"></tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+
+         ..OVERDUE DASHBOARD
+        
+
+    <section id="overdue" class="section">
+
+        <div class="card">
+
+            <h2> Overdue Maintenance Dashboard</h2>
+
+            <p>
+                Assets with maintenance schedules whose due date has passed.
+            </p>
+
+            <button onclick="loadOverdue()">
+                 Check Overdue Assets
+            </button>
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Asset Tag</th>
+                        <th>Name</th>
+                        <th>Institution</th>
+                        <th>Site</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody id="overdueTableBody"></tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+
+        .. INSTITUTIONS
+     
+
+    <section id="institutions" class="section">
+
+        <div class="two-column">
+
+            <div class="card">
+
+                <h2> Add Institution</h2>
+
+                <form id="institutionForm">
+
+                    <input
+                        type="text"
+                        id="newInstitution"
+                        placeholder="Institution name"
+                        required
+                    >
+
+                    <button type="submit">
+                        Add Institution
+                    </button>
+
+                </form>
+
+            </div>
+
+
+            <div class="card">
+
+                <h2> Registered Institutions</h2>
+
+                <button onclick="loadInstitutions()">
+                     Refresh Institutions
+                </button>
+
+                <ul id="institutionList"></ul>
+
+            </div>
+
+        </div>
+
+    </section>
+
+</div>
+
+
+
+    ... EDIT ASSET MODAL
+    
+
+<div id="editModal" class="modal">
+
+    <div class="modal-content">
+
+        <span class="close" onclick="closeEditModal()">
+            &times;
+        </span>
+
+        <h2> Edit Asset</h2>
+
+        <form id="editForm">
+
+            <input
+                type="text"
+                id="editTag"
+                readonly
+            >
+
+            <input
+                type="text"
+                id="editName"
+                placeholder="Asset Name"
+                required
+            >
+
+            <input
+                type="text"
+                id="editDescription"
+                placeholder="Description"
+            >
+
+            <input
+                type="text"
+                id="editInstitution"
+                placeholder="Institution"
+                required
+            >
+
+            <input
+                type="text"
+                id="editSite"
+                placeholder="Campus / Site"
+                required
+            >
+
+            <select id="editStatus">
+
+                <option value="AVAILABLE">
+                    AVAILABLE
+                </option>
+
+                <option value="NOT AVAILABLE">
+                    NOT AVAILABLE
+                </option>
+
+                <option value="UNDER MAINTENANCE">
+                    UNDER MAINTENANCE
+                </option>
+
+                <option value="DISPOSED">
+                    DISPOSED
+                </option>
+
+            </select>
+
+            <input
+                type="date"
+                id="editDate"
+                required
+            >
+
+            <button type="submit">
+                Save Changes
+            </button>
+
+            <button
+                type="button"
+                class="secondary"
+                onclick="closeEditModal()"
+            >
+                Cancel
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    const API_URL = "http://localhost:8080/assets";
+
+    let allAssets = [];
+
+    // SECTION NAVIGATION
+   
+
+    function showSection(sectionId) {
+
+        document.querySelectorAll(".section").forEach(section => {
+            section.classList.remove("active");
+        });
+
+        document.getElementById(sectionId).classList.add("active");
+
+        if (sectionId === "dashboard") {
+            loadDashboard();
+        }
+
+        if (sectionId === "campus") {
+            loadCampusOptions();
+        }
+
+        if (sectionId === "loan") {
+            loadLoanAssets();
+        }
+
+        if (sectionId === "schedule") {
+            loadScheduleAssetOptions();
+        }
+
+        if (sectionId === "overdue") {
+            loadOverdue();
+        }
+
+        if (sectionId === "institutions") {
+            loadInstitutions();
+        }
+    }
+
+
+    // MESSAGE
+   
+
+    function showMessage(message, type) {
+
+        const box = document.getElementById("message");
+
+        box.textContent = message;
+        box.className = "message " + type;
+        box.style.display = "block";
+
+        setTimeout(() => {
+            box.style.display = "none";
+        }, 3000);
+    }
+
+    // LOAD ALL ASSETS
+   
+
+    async function loadAssets() {
+
+        try {
+
+            const response = await fetch(API_URL);
+
+            if (!response.ok) {
+                throw new Error("Unable to load assets");
+            }
+
+            allAssets = await response.json();
+
+            renderAssets(allAssets);
+
+            populateFilters();
+
+            updateDashboardNumbers();
+
+        } catch (error) {
+
+            console.error(error);
+
+            showMessage(
+                "Could not connect to the Campus Library server.",
+                "error"
+            );
+        }
+    }
+
+    // RENDER ASSETS
+  
+
+    function renderAssets(assets) {
+
+        const body =
+            document.getElementById("assetsTableBody");
+
+        body.innerHTML = "";
+
+        if (assets.length === 0) {
+
+            body.innerHTML =
+                '<tr><td colspan="7" class="empty">No assets found.</td></tr>';
+
+            return;
+        }
+
+        assets.forEach(asset => {
+
+            const row = document.createElement("tr");
+
+            const statusClass =
+                asset.status === "AVAILABLE"
+                    ? "available"
+                    : "unavailable";
+
+            row.innerHTML = `
+
+                <td><strong>${escapeHtml(asset.assetTag)}</strong></td>
+
+                <td>${escapeHtml(asset.name)}</td>
+
+                <td>${escapeHtml(asset.institution)}</td>
+
+                <td>${escapeHtml(asset.site || "-")}</td>
+
+                <td class="${statusClass}">
+                    ${escapeHtml(asset.status)}
+                </td>
+
+                <td>${escapeHtml(asset.dateAcquired || "-")}</td>
+
+                <td>
+
+                    <button
+                        class="action-btn"
+                        onclick="openEditModal('${encodeURIComponent(asset.assetTag)}')"
+                    >
+                        Edit
+                    </button>
+
+                    <button
+                        class="action-btn danger"
+                        onclick="deleteAsset('${encodeURIComponent(asset.assetTag)}')"
+                    >
+                        Delete
+                    </button>
+
+                </td>
+            `;
+
+            body.appendChild(row);
+        });
+    }
+
+    // FILTER OPTIONS
+  
+
+    function populateFilters() {
+
+        const institutionSelect =
+            document.getElementById("institutionFilter");
+
+        const siteSelect =
+            document.getElementById("siteFilter");
+
+        const institutions =
+            [...new Set(allAssets.map(a => a.institution))]
+                .sort();
+
+        const sites =
+            [...new Set(allAssets.map(a => a.site))]
+                .filter(Boolean)
+                .sort();
+
+        institutionSelect.innerHTML =
+            '<option value="">All Institutions</option>';
+
+        siteSelect.innerHTML =
+            '<option value="">All Campuses / Sites</option>';
+
+        institutions.forEach(institution => {
+
+            institutionSelect.innerHTML += `
+                <option value="${escapeHtml(institution)}">
+                    ${escapeHtml(institution)}
+                </option>
+            `;
+        });
+
+        sites.forEach(site => {
+
+            siteSelect.innerHTML += `
+                <option value="${escapeHtml(site)}">
+                    ${escapeHtml(site)}
+                </option>
+            `;
+        });
+    }
+
+
+    // APPLY FILTERS
+
+
+    function applyFilters() {
+
+        const institution =
+            document.getElementById("institutionFilter").value;
+
+        const site =
+            document.getElementById("siteFilter").value;
+
+        let filtered = allAssets;
+
+        if (institution) {
+
+            filtered =
+                filtered.filter(
+                    asset => asset.institution === institution
+                );
+        }
+
+        if (site) {
+
+            filtered =
+                filtered.filter(
+                    asset => asset.site === site
+                );
+        }
+
+        renderAssets(filtered);
+    }
+
+    // ADD ASSET
+   
+
+    document
+        .getElementById("assetForm")
+        .addEventListener("submit", async function(event) {
+
+            event.preventDefault();
+
+            const newAsset = {
+
+                assetTag:
+                    document.getElementById("assetTag").value,
+
+                name:
+                    document.getElementById("name").value,
+
+                description:
+                    document.getElementById("description").value,
+
+                institution:
+                    document.getElementById("institution").value,
+
+                site:
+                    document.getElementById("site").value,
+
+                status:
+                    document.getElementById("status").value,
+
+                dateAcquired:
+                    document.getElementById("dateAcquired").value
+            };
+
+            try {
+
+                const response =
+                    await fetch(API_URL, {
+
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+
+                        body: JSON.stringify(newAsset)
+                    });
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "Asset could not be created"
+                    );
+                }
+
+                showMessage(
+                    "Asset successfully added.",
+                    "success"
+                );
+
+                this.reset();
+
+                await loadAssets();
+
+                showSection("assets");
+
+            } catch (error) {
+
+                showMessage(
+                    "Could not add asset. The asset tag may already exist.",
+                    "error"
+                );
+            }
+        });
+
+    // EDIT MODAL
+  
+
+    function openEditModal(encodedTag) {
+
+        const tag = decodeURIComponent(encodedTag);
+
+        const asset =
+            allAssets.find(
+                a => a.assetTag === tag
+            );
+
+        if (!asset) {
+            return;
+        }
+
+        document.getElementById("editTag").value =
+            asset.assetTag;
+
+        document.getElementById("editName").value =
+            asset.name;
+
+        document.getElementById("editDescription").value =
+            asset.description || "";
+
+        document.getElementById("editInstitution").value =
+            asset.institution;
+
+        document.getElementById("editSite").value =
+            asset.site || "";
+
+        document.getElementById("editStatus").value =
+            asset.status;
+
+        document.getElementById("editDate").value =
+            asset.dateAcquired || "";
+
+        document.getElementById("editModal").style.display =
+            "block";
+    }
+
+
+    function closeEditModal() {
+
+        document.getElementById("editModal").style.display =
+            "none";
+    }
+
+    // UPDATE ASSET
+   
+
+    document
+        .getElementById("editForm")
+        .addEventListener("submit", async function(event) {
+
+            event.preventDefault();
+
+            const tag =
+                document.getElementById("editTag").value;
+
+            const updatedAsset = {
+
+                assetTag: tag,
+
+                name:
+                    document.getElementById("editName").value,
+
+                description:
+                    document.getElementById("editDescription").value,
+
+                institution:
+                    document.getElementById("editInstitution").value,
+
+                site:
+                    document.getElementById("editSite").value,
+
+                status:
+                    document.getElementById("editStatus").value,
+
+                dateAcquired:
+                    document.getElementById("editDate").value
+            };
+
+            try {
+
+                const response =
+                    await fetch(
+                        `${API_URL}/${encodeURIComponent(tag)}`,
+                        {
+                            method: "PUT",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify(updatedAsset)
+                        }
+                    );
+
+                if (!response.ok) {
+                    throw new Error("Update failed");
+                }
+
+                closeEditModal();
+
+                showMessage(
+                    "Asset successfully updated.",
+                    "success"
+                );
+
+                await loadAssets();
+
+            } catch (error) {
+
+                showMessage(
+                    "Could not update asset.",
+                    "error"
+                );
+            }
+        });
+
+    // DELETE ASSET
+   
+
+    async function deleteAsset(encodedTag) {
+
+        const tag =
+            decodeURIComponent(encodedTag);
+
+        if (
+            !confirm(
+                `Are you sure you want to delete asset "${tag}"?`
+            )
+        ) {
+            return;
+        }
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/${encodeURIComponent(tag)}`,
+                    {
+                        method: "DELETE"
+                    }
+                );
+
+            if (!response.ok) {
+                throw new Error("Delete failed");
+            }
+
+            showMessage(
+                "Asset successfully deleted.",
+                "success"
+            );
+
+            await loadAssets();
+
+        } catch (error) {
+
+            showMessage(
+                "Could not delete asset.",
+                "error"
+            );
+        }
+    }
+
+
+    // DASHBOARD
+   
+
+    async function loadDashboard() {
+
+        await loadAssets();
+
+        try {
+
+            const response =
+                await fetch(`${API_URL}/overdue`);
+
+            const overdue =
+                await response.json();
+
+            document.getElementById("overdueCount").textContent =
+                overdue.length;
+
+        } catch (error) {
+
+            console.error(error);
+        }
+    }
+
+
+    function updateDashboardNumbers() {
+
+        const total =
+            allAssets.length;
+
+        const available =
+            allAssets.filter(
+                asset => asset.status === "AVAILABLE"
+            ).length;
+
+        const unavailable =
+            total - available;
+
+        document.getElementById("totalAssets").textContent =
+            total;
+
+        document.getElementById("availableAssets").textContent =
+            available;
+
+        document.getElementById("unavailableAssets").textContent =
+            unavailable;
+    }
+
+
+    // CAMPUS VIEW
+   
+
+    function loadCampusOptions() {
+
+        const select =
+            document.getElementById("campusSelect");
+
+        const sites =
+            [...new Set(
+                allAssets
+                    .map(asset => asset.site)
+                    .filter(Boolean)
+            )].sort();
+
+        select.innerHTML =
+            '<option value="">Select a Campus / Site</option>';
+
+        sites.forEach(site => {
+
+            select.innerHTML += `
+                <option value="${escapeHtml(site)}">
+                    ${escapeHtml(site)}
+                </option>
+            `;
+        });
+    }
+
+
+    async function loadCampusAssets() {
+
+        const site =
+            document.getElementById("campusSelect").value;
+
+        const body =
+            document.getElementById("campusTableBody");
+
+        body.innerHTML = "";
+
+        if (!site) {
+            return;
+        }
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/site/${encodeURIComponent(site)}`
+                );
+
+            const assets =
+                await response.json();
+
+            if (assets.length === 0) {
+
+                body.innerHTML =
+                    '<tr><td colspan="5" class="empty">No assets found.</td></tr>';
+
+                return;
+            }
+
+            assets.forEach(asset => {
+
+                body.innerHTML += `
+
+                    <tr>
+
+                        <td>
+                            <strong>
+                                ${escapeHtml(asset.assetTag)}
+                            </strong>
+                        </td>
+
+                        <td>${escapeHtml(asset.name)}</td>
+
+                        <td>${escapeHtml(asset.institution)}</td>
+
+                        <td>${escapeHtml(asset.site)}</td>
+
+                        <td>${escapeHtml(asset.status)}</td>
+
+                    </tr>
+                `;
+            });
+
+        } catch (error) {
+
+            showMessage(
+                "Could not load campus assets.",
+                "error"
+            );
+        }
+    }
+
+    // LOANING
+   
+
+    async function loadLoanAssets() {
+
+        await loadAssets();
+
+        const select =
+            document.getElementById("loanAssetSelect");
+
+        const body =
+            document.getElementById("loanAssetsTableBody");
+
+        select.innerHTML =
+            '<option value="">Select an available asset</option>';
+
+        body.innerHTML = "";
+
+        allAssets.forEach(asset => {
+
+            if (asset.status === "AVAILABLE") {
+
+                select.innerHTML += `
+                    <option value="${escapeHtml(asset.assetTag)}">
+                        ${escapeHtml(asset.assetTag)} -
+                        ${escapeHtml(asset.name)}
+                    </option>
+                `;
+            }
+
+            body.innerHTML += `
+
+                <tr>
+
+                    <td>${escapeHtml(asset.assetTag)}</td>
+
+                    <td>${escapeHtml(asset.name)}</td>
+
+                    <td>${escapeHtml(asset.institution)}</td>
+
+                    <td>${escapeHtml(asset.site)}</td>
+
+                    <td>${escapeHtml(asset.status)}</td>
+
+                </tr>
+            `;
+        });
+    }
+
+
+    async function loanSelectedAsset() {
+
+        const tag =
+            document.getElementById("loanAssetSelect").value;
+
+        if (!tag) {
+
+            showMessage(
+                "Please select an asset first.",
+                "error"
+            );
+
+            return;
+        }
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/${encodeURIComponent(tag)}/loan`,
+                    {
+                        method: "POST"
+                    }
+                );
+
+            if (!response.ok) {
+                throw new Error("Loan failed");
+            }
+
+            showMessage(
+                "Asset successfully loaned.",
+                "success"
+            );
+
+            await loadLoanAssets();
+
+        } catch (error) {
+
+            showMessage(
+                "Could not loan asset.",
+                "error"
+            );
+        }
+    }
+
+    // SCHEDULE ASSET OPTIONS
+    
+
+    async function loadScheduleAssetOptions() {
+
+        await loadAssets();
+
+        const addSelect =
+            document.getElementById("scheduleAsset");
+
+        const viewSelect =
+            document.getElementById("viewScheduleAsset");
+
+        addSelect.innerHTML =
+            '<option value="">Select Asset</option>';
+
+        viewSelect.innerHTML =
+            '<option value="">Select Asset</option>';
+
+        allAssets.forEach(asset => {
+
+            const option = `
+                <option value="${escapeHtml(asset.assetTag)}">
+                    ${escapeHtml(asset.assetTag)} -
+                    ${escapeHtml(asset.name)}
+                </option>
+            `;
+
+            addSelect.innerHTML += option;
+            viewSelect.innerHTML += option;
+        });
+    }
+
+    // ADD SCHEDULE
+   
+
+    document
+        .getElementById("scheduleForm")
+        .addEventListener("submit", async function(event) {
+
+            event.preventDefault();
+
+            const tag =
+                document.getElementById("scheduleAsset").value;
+
+            const schedule = {
+
+                scheduleId:
+                    document.getElementById("scheduleId").value,
+
+                scheduleType:
+                    document.getElementById("scheduleType").value,
+
+                dueDate:
+                    document.getElementById("scheduleDate").value,
+
+                description:
+                    document.getElementById("scheduleDescription").value
+            };
+
+            if (!tag) {
+
+                showMessage(
+                    "Please select an asset.",
+                    "error"
+                );
+
+                return;
+            }
+
+            try {
+
+                const response =
+                    await fetch(
+                        `${API_URL}/${encodeURIComponent(tag)}/schedules`,
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify(schedule)
+                        }
+                    );
+
+                if (!response.ok) {
+                    throw new Error("Schedule creation failed");
+                }
+
+                showMessage(
+                    "Schedule successfully added.",
+                    "success"
+                );
+
+                this.reset();
+
+                document.getElementById("scheduleTableBody").innerHTML =
+                    "";
+
+            } catch (error) {
+
+                showMessage(
+                    "Could not add schedule.",
+                    "error"
+                );
+            }
+        });
+
+
+    // VIEW SCHEDULE
+  
+
+    async function loadSchedules() {
+
+        const tag =
+            document.getElementById("viewScheduleAsset").value;
+
+        const body =
+            document.getElementById("scheduleTableBody");
+
+        body.innerHTML = "";
+
+        if (!tag) {
+
+            showMessage(
+                "Please select an asset.",
+                "error"
+            );
+
+            return;
+        }
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/${encodeURIComponent(tag)}/schedules`
+                );
+
+            const schedules =
+                await response.json();
+
+            if (schedules.length === 0) {
+
+                body.innerHTML =
+                    '<tr><td colspan="5" class="empty">No schedules found.</td></tr>';
+
+                return;
+            }
+
+            schedules.forEach(schedule => {
+
+                body.innerHTML += `
+
+                    <tr>
+
+                        <td>
+                            ${escapeHtml(schedule.scheduleId)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(schedule.scheduleType)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(schedule.dueDate)}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(schedule.description)}
+                        </td>
+
+                        <td>
+
+                            <button
+                                class="action-btn danger"
+                                onclick="deleteSchedule(
+                                    '${encodeURIComponent(tag)}',
+                                    '${encodeURIComponent(schedule.scheduleId)}'
+                                )"
+                            >
+                                Delete
+                            </button>
+
+                        </td>
+
+                    </tr>
+                `;
+            });
+
+        } catch (error) {
+
+            showMessage(
+                "Could not load schedules.",
+                "error"
+            );
+        }
+    }
+
+
+    // DELETE SCHEDULE
+   
+
+    async function deleteSchedule(encodedTag, encodedScheduleId) {
+
+        const tag =
+            decodeURIComponent(encodedTag);
+
+        const scheduleId =
+            decodeURIComponent(encodedScheduleId);
+
+        if (!confirm(
+            `Delete schedule "${scheduleId}"?`
+        )) {
+            return;
+        }
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/${encodeURIComponent(tag)}/schedules/${encodeURIComponent(scheduleId)}`,
+                    {
+                        method: "DELETE"
+                    }
+                );
+
+            if (!response.ok) {
+                throw new Error("Delete failed");
+            }
+
+            showMessage(
+                "Schedule deleted.",
+                "success"
+            );
+
+            await loadSchedules();
+
+        } catch (error) {
+
+            showMessage(
+                "Could not delete schedule.",
+                "error"
+            );
+        }
+    }
+
+
+    // OVERDUE DASHBOARD
+    
+
+    async function loadOverdue() {
+
+        const body =
+            document.getElementById("overdueTableBody");
+
+        body.innerHTML = "";
+
+        try {
+
+            const response =
+                await fetch(`${API_URL}/overdue`);
+
+            if (!response.ok) {
+                throw new Error("Overdue request failed");
+            }
+
+            const assets =
+                await response.json();
+
+            document.getElementById("overdueCount").textContent =
+                assets.length;
+
+            if (assets.length === 0) {
+
+                body.innerHTML =
+                    '<tr><td colspan="5" class="empty">No overdue maintenance found. 🎉</td></tr>';
+
+                return;
+            }
+
+            assets.forEach(asset => {
+
+                body.innerHTML += `
+
+                    <tr>
+
+                        <td>
+                            <strong>
+                                ${escapeHtml(asset.assetTag)}
+                            </strong>
+                        </td>
+
+                        <td>${escapeHtml(asset.name)}</td>
+
+                        <td>${escapeHtml(asset.institution)}</td>
+
+                        <td>${escapeHtml(asset.site)}</td>
+
+                        <td class="overdue">
+                            ${escapeHtml(asset.status)}
+                        </td>
+
+                    </tr>
+                `;
+            });
+
+        } catch (error) {
+
+            showMessage(
+                "Could not check overdue maintenance.",
+                "error"
+            );
+        }
+    }
+
+    // INSTITUTIONS
+    
+
+    async function loadInstitutions() {
+
+        const list =
+            document.getElementById("institutionList");
+
+        list.innerHTML = "";
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/institutions`
+                );
+
+            const institutions =
+                await response.json();
+
+            if (institutions.length === 0) {
+
+                list.innerHTML =
+                    "<li>No institutions registered.</li>";
+
+                return;
+            }
+
+            institutions.forEach(institution => {
+
+                const li =
+                    document.createElement("li");
+
+                li.style.marginBottom = "10px";
+
+                li.innerHTML = `
+
+                    <strong>
+                        ${escapeHtml(institution)}
+                    </strong>
+
+                    <button
+                        class="action-btn danger"
+                        onclick="deleteInstitution('${encodeURIComponent(institution)}')"
+                    >
+                        Remove
+                    </button>
+                `;
+
+                list.appendChild(li);
+            });
+
+        } catch (error) {
+
+            showMessage(
+                "Could not load institutions.",
+                "error"
+            );
+        }
+    }
+
+    // ADD INSTITUTION
+   
+
+    document
+        .getElementById("institutionForm")
+        .addEventListener("submit", async function(event) {
+
+            event.preventDefault();
+
+            const institution =
+                document.getElementById("newInstitution").value;
+
+            try {
+
+                const response =
+                    await fetch(
+                        `${API_URL.replace("/assets", "")}/institutions?institution=${encodeURIComponent(institution)}`,
+                        {
+                            method: "POST"
+                        }
+                    );
+
+                if (!response.ok) {
+                    throw new Error("Institution creation failed");
+                }
+
+                showMessage(
+                    "Institution successfully added.",
+                    "success"
+                );
+
+                this.reset();
+
+                await loadInstitutions();
+
+            } catch (error) {
+
+                showMessage(
+                    "Could not add institution.",
+                    "error"
+                );
+            }
+        });
+
+
+    // DELETE INSTITUTION
+    
+
+    async function deleteInstitution(encodedInstitution) {
+
+        const institution =
+            decodeURIComponent(encodedInstitution);
+
+        if (!confirm(
+            `Remove institution "${institution}"?`
+        )) {
+            return;
+        }
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL.replace("/assets", "")}/institutions/${encodeURIComponent(institution)}`,
+                    {
+                        method: "DELETE"
+                    }
+                );
+
+            if (!response.ok) {
+                throw new Error("Institution deletion failed");
+            }
+
+            showMessage(
+                "Institution removed.",
+                "success"
+            );
+
+            await loadInstitutions();
+
+        } catch (error) {
+
+            showMessage(
+                "Could not remove institution.",
+                "error"
+            );
+        }
+    }
+
+    // ESCAPE HTML
+    
+
+    function escapeHtml(value) {
+
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+
+
+    // INITIAL LOAD
+    
+
+    loadAssets();
+
+    loadOverdue();
+
+</script>
+
+</body>
+</html>
